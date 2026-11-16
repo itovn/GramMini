@@ -230,3 +230,18 @@
 - iPad 1 (iOS 5.1.1): sáng + tối — danh sách chat, chat, Danh bạ, Cài đặt — đạt. Hình nền 1024 × 1024 vẽ 0,57 s → lưu JPEG.
 - iPad mini 1 (iOS 6.1.3): đã cài; đang chờ anh bấm hộp «GramMini muốn gửi thông báo Push» rồi mới thử tiếp.
 
+### Phát hành 1.0.0 (16/11/2026 — anh chốt: 1.0 ngay, TGS ở 1.1; repo itovn/GramMini công khai GPL-3.0; OTA + tự respring)
+
+- **OTA**: lõi có HTTPS (reqwest + rustls + bộ gốc Mozilla; ring vá cho armv7 Apple như Côn Bằng TV), app đọc GitHub Releases
+  (`GMUpdateURL`), tải qua lõi (sự kiện `http.progress`), kiểm kích thước + SHA-256, gọi `/usr/libexec/grammini/gmupdate` (setuid
+  root): dpkg -i → **luôn** khởi động lại SpringBoard → mở lại app. iPad mini: 0.1.0 → 0.1.1 qua nguồn thử trong LAN — tải 0,6 s,
+  respring, app mở lại sau 14 s. iPad 1 (iOS 5): đọc GitHub thật qua rustls → «bản mới nhất 1.0.0».
+- Bản 1.0.0 (`tools/build-release.sh`, không có Debug/): 410 ký hiệu, thiếu 0 trên iOS 5 và iOS 6; cài thử iPad 1 — chạy.
+- Repo công khai **itovn/GramMini**: ảnh chụp mã sạch (không lịch sử, bỏ `Tai_Lieu/`, đã bỏ tên chat / danh bạ riêng khỏi
+  tài liệu), LICENSE GPL-3.0, README; Release v1.0.0 kèm .deb (GitHub ghi digest SHA-256).
+- Trang giới thiệu + nguồn Cydia (`E:\DEV_CODE\GramMini.github.io`, `tools/update-cydia-repo.sh`): kiểu iOS 6 (thanh trên bóng,
+  nền sọc, bảng nhóm, nút bóng), ảnh minh hoạ vẽ lại từ bản mẫu (dữ liệu mẫu — ảnh chụp thật có tên chat của anh / nút
+  AssistiveTouch); thử trên Safari iPhone 5 (iOS 6) và iPad 1 (iOS 5) — hiện đúng. Chờ tổ chức GitHub **GramMini** để đẩy lên
+  GramMini.github.io.
+- App: Cài đặt → «Nhóm Telegram GramMini» (t.me/tivikit, mở ngay trong app), chú thích mã nguồn mở; chạm «Phiên bản» = kiểm bản mới.
+
