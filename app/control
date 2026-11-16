@@ -1,0 +1,10 @@
+Package: vn.grammini.app
+Name: GramMini
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Nhắn tin Telegram trên iPhone / iPad iOS 5 / iOS 6 (ứng dụng không chính thức, dùng Telegram API). Có MTProxy.
+Maintainer: GramMini
+Author: GramMini
+Section: Social
+Icon: file:///Applications/GramMini.app/Icon@2x.png
+Depends: firmware (>= 5.0), mobilesubstrate

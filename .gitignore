@@ -1,0 +1,15 @@
+/core/target/
+/keys/
+# Công cụ / ghi chú riêng trên máy anh (địa chỉ máy dựng, máy thử) — không lên git
+/tools-local/
+# Khoá api_id / api_hash của anh (my.telegram.org) — không bao giờ lên git
+/Tai_Lieu/tele_appID_keys/
+# Tệp phiên đăng nhập của gm-cli (có auth key) — không lên git
+gm-session*.json
+*.session.json
+# Thư mục dựng của Theos
+/app/.theos/
+/app/packages/
+# Gói IPA Telegram 4.9.2 (tham khảo; có iTunesMetadata.plist = thông tin Apple ID người mua, tệp chạy có bản quyền) — không lên git
+/Tai_Lieu/Telegram_Messenger_4.9.2/
+/Tai_Lieu/*.ipa

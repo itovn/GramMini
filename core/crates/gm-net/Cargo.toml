@@ -1,0 +1,21 @@
+[package]
+name = "gm-net"
+description = "GramMini: đường ra mạng (đi thẳng / SOCKS5 / MTProxy dd, ee fake-TLS) cho grammers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+grammers-mtsender.workspace = true
+grammers-mtproto.workspace = true
+tokio = { workspace = true }
+# Cùng phiên bản RustCrypto với grammers-crypto (khỏi dựng hai bản trên armv7)
+aes = "0.9"
+ctr = "0.10"
+sha2 = "0.11"
+hmac = "0.13"
+getrandom = "0.4"
+num-bigint = "0.5"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "io-util"] }

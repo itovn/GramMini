@@ -1,0 +1,302 @@
+#import "GMDebug.h"
+#import "GMAppDelegate.h"
+#import "GMChatListViewController.h"
+#import "GMChatViewController.h"
+#import "GMCore.h"
+#import "GMLog.h"
+#import "GMProxyViewController.h"
+#import "GMStorageViewController.h"
+#import "GMFileBrowserViewController.h"
+#import "GMBackground.h"
+#import "GMPasscode.h"
+#import "GMContactsViewController.h"
+#import "GMNewGroupViewController.h"
+#import "GMStickerSetViewController.h"
+#import "GMLoginViewController.h"
+#import "GMUpdate.h"
+#import <UIKit/UIKit.h>
+
+static NSString *const kCmdFile = @"/var/mobile/Documents/GramMini-cmd.txt";
+
+@implementation GMDebug
+
+static UIActionSheet *GMFindSheet(UIView *v) {
+    if ([v isKindOfClass:[UIActionSheet class]]) return (UIActionSheet *)v;
+    for (UIView *s in v.subviews) {
+        UIActionSheet *r = GMFindSheet(s);
+        if (r) return r;
+    }
+    return nil;
+}
+
++ (void)start {
+    [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(tick) userInfo:nil repeats:YES];
+    // Bản thử: giữ màn hình sáng để SSH / chụp màn hình không bị mất khi máy tự khoá
+    [UIApplication sharedApplication].idleTimerDisabled = YES;
+    GMLog(@"[thử] đọc lệnh từ %@", kCmdFile);
+}
+
++ (void)tick {
+    NSString *s = [NSString stringWithContentsOfFile:kCmdFile encoding:NSUTF8StringEncoding error:NULL];
+    if (!s) return;
+    [[NSFileManager defaultManager] removeItemAtPath:kCmdFile error:NULL];
+    for (NSString *raw in [s componentsSeparatedByString:@"\n"]) {
+        NSString *line = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (line.length) [self run:line];
+    }
+}
+
++ (void)run:(NSString *)line {
+    GMAppDelegate *app = (GMAppDelegate *)[UIApplication sharedApplication].delegate;
+    UINavigationController *nav = (UINavigationController *)app.tabs.selectedViewController;  // thanh điều hướng của mục đang chọn
+    UIViewController *top = nav.topViewController;
+    NSRange sp = [line rangeOfString:@" "];
+    NSString *cmd = sp.location == NSNotFound ? line : [line substringToIndex:sp.location];
+    NSString *arg = sp.location == NSNotFound ? @"" : [line substringFromIndex:sp.location + 1];
+    GMLog(@"[thử] %@", cmd);
+    if ([cmd isEqual:@"opensaved"]) {
+        // Tin nhắn đã lưu (tin thử chỉ gửi vào đây — «open 0» là chat đầu danh sách, có thể là chat thật)
+        if (app.list.myId) [app.list openChat:@{@"peer": app.list.myId} jumpTo:nil];
+    } else if ([cmd isEqual:@"open"]) {
+        [app.list openRow:arg.integerValue];
+    } else if ([cmd isEqual:@"back"]) {
+        [nav popViewControllerAnimated:YES];
+    } else if ([cmd isEqual:@"send"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top sendText:arg];
+    } else if ([cmd isEqual:@"tapmsg"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugTapFromBottom:arg.integerValue];
+    } else if ([cmd isEqual:@"copymsg"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugCopyFromBottom:arg.integerValue];
+        GMLog(@"[thử] bảng tạm: %lu ký tự", (unsigned long)[UIPasteboard generalPasteboard].string.length);
+    } else if ([cmd isEqual:@"menumsg"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugMenuFromBottom:arg.integerValue];
+    } else if ([cmd isEqual:@"replymsg"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugReplyFromBottom:arg.integerValue];
+    } else if ([cmd isEqual:@"forward"] && [top isKindOfClass:[GMChatViewController class]]) {
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        if (p.count == 2) [(GMChatViewController *)top debugForwardFromBottom:[[p objectAtIndex:0] integerValue] to:[p objectAtIndex:1]];
+    } else if ([cmd isEqual:@"type"] && [top isKindOfClass:[GMChatViewController class]]) {
+        UITextView *tv = [top valueForKey:@"_input"];
+        tv.text = [arg stringByReplacingOccurrencesOfString:@"\\n" withString:@"\n"];
+        [(id<UITextViewDelegate>)top textViewDidChange:tv];
+    } else if ([cmd isEqual:@"sendphotofile"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top sendPhotoFile:arg];
+    } else if ([cmd isEqual:@"sendvoicefile"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top sendVoiceFile:arg];
+    } else if ([cmd isEqual:@"playvoice"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugPlayVoiceFromBottom:arg.integerValue];
+    } else if ([cmd isEqual:@"sendfile"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // sendfile <đường dẫn> [mime] — mp4 thì gửi dạng video (thuộc tính lấy từ tên «…_WxH_Ns.mp4» nếu có)
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        NSString *path = [p objectAtIndex:0];
+        NSMutableDictionary *a = [@{@"peer": [(GMChatViewController *)top peer], @"path": path, @"name": path.lastPathComponent} mutableCopy];
+        if (p.count > 1) [a setObject:[p objectAtIndex:1] forKey:@"mime"];
+        if ([path hasSuffix:@".mp4"]) [a setObject:@{@"duration": @6, @"w": @640, @"h": @360} forKey:@"video"];
+        [GMCore call:@"messages.sendFile" args:a done:^(id ok, NSDictionary *err) {
+            GMLog(@"[thử] sendfile → %@", err ? [err objectForKey:@"code"] : [ok objectForKey:@"id"]);
+            if (ok) [[NSNotificationCenter defaultCenter] postNotificationName:GMCoreEventNotification object:nil
+                                                                      userInfo:@{@"e": @"msg.new", @"msg": ok}];
+        }];
+    } else if ([cmd isEqual:@"opendoc"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugOpenDocFromBottom:arg.integerValue];
+    } else if ([cmd isEqual:@"dismiss"]) {
+        [app.tabs dismissViewControllerAnimated:YES completion:nil];
+    } else if ([cmd isEqual:@"sel"]) {
+        // sel <tên hàm không đối số> — gọi trên màn trên cùng (toggleEdit, showInfo, stickerTapped, cancelCompose…)
+        SEL s = NSSelectorFromString(arg);
+        if ([top respondsToSelector:s]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            [top performSelector:s];
+#pragma clang diagnostic pop
+        } else {
+            GMLog(@"[thử] %@ không có %@", NSStringFromClass([top class]), arg);
+        }
+    } else if ([cmd isEqual:@"savemsg"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(id)top debugSaveFromBottom:arg.integerValue];  // lưu ảnh / video của tin thứ k từ dưới lên vào Thư viện ảnh
+    } else if ([cmd isEqual:@"folder"] && [top isKindOfClass:[GMChatListViewController class]]) {
+        [(GMChatListViewController *)top debugFolder:arg.integerValue];
+    } else if ([cmd isEqual:@"updateapi"]) {
+        // updateapi <url> — nguồn bản mới để thử (rỗng = dùng Info.plist); updatecheck — kiểm ngay như chạm «Phiên bản»
+        if (arg.length) [[NSUserDefaults standardUserDefaults] setObject:arg forKey:@"update.api"];
+        else [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"update.api"];
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"update.snooze"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    } else if ([cmd isEqual:@"updatecheck"]) {
+        [GMUpdate checkManual];
+    } else if ([cmd isEqual:@"alertbtn"]) {
+        // alertbtn <i> — bấm nút i của hộp thoại của app (UIAlertView của GramMini, không phải hộp hệ thống)
+        for (UIWindow *w in [UIApplication sharedApplication].windows) {
+            for (UIView *v in w.subviews) {
+                if (![v isKindOfClass:[UIAlertView class]]) continue;
+                UIAlertView *a = (UIAlertView *)v;
+                GMLog(@"[thử] hộp «%@»: nút %ld «%@»", a.title, (long)arg.integerValue, [a buttonTitleAtIndex:arg.integerValue]);
+                if ([a.delegate respondsToSelector:@selector(alertView:clickedButtonAtIndex:)]) [a.delegate alertView:a clickedButtonAtIndex:arg.integerValue];
+                [a dismissWithClickedButtonIndex:arg.integerValue animated:YES];
+            }
+        }
+    } else if ([cmd isEqual:@"loginui"]) {
+        // loginui — mở màn đăng nhập để xem (không đăng xuất); loginstep <0|1|2>; loggedin — trả danh sách chat về bình thường
+        UINavigationController *n = [[UINavigationController alloc] initWithRootViewController:[[GMLoginViewController alloc] init]];
+        [app.tabs presentViewController:n animated:YES completion:nil];
+    } else if ([cmd isEqual:@"loginstep"]) {
+        UINavigationController *n = (UINavigationController *)app.tabs.presentedViewController;
+        id vc = [n isKindOfClass:[UINavigationController class]] ? n.topViewController : nil;
+        if ([vc respondsToSelector:@selector(debugStep:)]) [vc debugStep:arg.integerValue];
+    } else if ([cmd isEqual:@"loginclose"]) {
+        UINavigationController *n = (UINavigationController *)app.tabs.presentedViewController;
+        id vc = [n isKindOfClass:[UINavigationController class]] ? n.topViewController : nil;
+        if ([vc respondsToSelector:@selector(close)]) [vc performSelector:@selector(close)];
+    } else if ([cmd isEqual:@"loggedin"]) {
+        app.list.loggedOut = NO;
+        [app.list reload];
+    } else if ([cmd isEqual:@"stickerset"]) {
+        // stickerset <tên ngắn> — xem một bộ sticker (như chạm link t.me/addstickers/…)
+        [GMStickerSetViewController present:@{@"short_name": arg} from:top pick:nil];
+    } else if ([cmd isEqual:@"stickersearch"]) {
+        UIViewController *p = app.tabs.presentedViewController ?: top;
+        if ([p isKindOfClass:[UINavigationController class]]) p = [(UINavigationController *)p topViewController];
+        if ([p respondsToSelector:@selector(debugSearch:)]) [(id)p debugSearch:arg];
+    } else if ([cmd isEqual:@"tab"]) {
+        // tab <0|1|2> — Danh bạ / Chat / Cài đặt
+        app.tabs.selectedIndex = arg.integerValue;
+    } else if ([cmd isEqual:@"recstart"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(id)top performSelector:@selector(sendDown)];
+    } else if ([cmd isEqual:@"recstop"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(id)top performSelector:@selector(sendTapped)];
+    } else if ([cmd isEqual:@"dump"]) {
+        UIWindow *w = [UIApplication sharedApplication].keyWindow;
+        GMLog(@"[thử] cửa sổ %@, hướng %d, màn %@ %@", NSStringFromCGRect(w.bounds),
+              (int)[UIApplication sharedApplication].statusBarOrientation, NSStringFromClass([top class]),
+              NSStringFromCGRect(top.view.bounds));
+        for (UIView *v in top.view.subviews) GMLog(@"[thử]   %@ %@", NSStringFromClass([v class]), NSStringFromCGRect(v.frame));
+    } else if ([cmd isEqual:@"reload"]) {
+        [app.list reload];
+    } else if ([cmd isEqual:@"settings"]) {
+        app.tabs.selectedIndex = 2;
+    } else if ([cmd isEqual:@"files"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugOpenFiles];
+    } else if ([cmd isEqual:@"sendvideo"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugSendVideo:arg];
+    } else if ([cmd isEqual:@"browse"] || [cmd isEqual:@"browsepath"]) {
+        // browse <hàng> — chạm hàng của trình chọn tệp đang mở; browsepath <thư mục> — mở thẳng thư mục
+        UINavigationController *pn = (UINavigationController *)(app.tabs.presentedViewController ?: nav.presentedViewController);
+        if ([pn isKindOfClass:[UINavigationController class]] &&
+            [pn.topViewController isKindOfClass:[GMFileBrowserViewController class]]) {
+            GMFileBrowserViewController *b = (GMFileBrowserViewController *)pn.topViewController;
+            if ([cmd isEqual:@"browse"]) [b debugTapSection:0 row:arg.integerValue];
+            else [b debugOpenPath:arg];
+        } else {
+            GMLog(@"[thử] không thấy trình chọn tệp");
+        }
+    } else if ([cmd isEqual:@"search"] && [top isKindOfClass:[GMChatListViewController class]]) {
+        [(GMChatListViewController *)top debugSearch:arg];
+    } else if ([cmd isEqual:@"searchtap"]) {
+        // searchtap <nhóm> <hàng> — chạm kết quả tìm (danh sách chat hoặc màn Tin nhắn mới)
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        if (p.count == 2 && [top isKindOfClass:[GMChatListViewController class]]) {
+            [(GMChatListViewController *)top debugSearchTap:[[p objectAtIndex:0] integerValue] row:[[p objectAtIndex:1] integerValue]];
+        } else if (p.count == 2 && [top isKindOfClass:[GMContactsViewController class]]) {
+            [(GMContactsViewController *)top debugTapSection:[[p objectAtIndex:0] integerValue] row:[[p objectAtIndex:1] integerValue]];
+        }
+    } else if ([cmd isEqual:@"actions"] && [top isKindOfClass:[GMChatListViewController class]]) {
+        [(GMChatListViewController *)top debugActions:arg.integerValue];
+    } else if ([cmd isEqual:@"compose"] && [top isKindOfClass:[GMChatListViewController class]]) {
+        [(id)top performSelector:@selector(compose)];
+    } else if ([cmd isEqual:@"ngpick"] && [top isKindOfClass:[GMNewGroupViewController class]]) {
+        [(GMNewGroupViewController *)top debugToggle:arg.integerValue];
+    } else if ([cmd isEqual:@"ngcreate"] && [top isKindOfClass:[GMNewGroupViewController class]]) {
+        [(GMNewGroupViewController *)top debugCreate:arg];
+    } else if ([cmd isEqual:@"csearch"] && [top isKindOfClass:[GMContactsViewController class]]) {
+        [(GMContactsViewController *)top debugSearch:arg];
+    } else if ([cmd isEqual:@"gifs"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugGifs];
+    } else if ([cmd isEqual:@"stickers"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // stickers | stickers tab <i> | stickers pick <i>
+        [(GMChatViewController *)top debugStickers:arg];
+    } else if ([cmd isEqual:@"info"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top showInfo];
+    } else if ([cmd isEqual:@"tap"] && [top isKindOfClass:[UITableViewController class]]) {
+        // tap <mục> <hàng> — chạm hàng của màn bảng đang ở trên cùng
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        UITableViewController *t = (UITableViewController *)top;
+        if (p.count == 2) {
+            NSIndexPath *ip = [NSIndexPath indexPathForRow:[[p objectAtIndex:1] integerValue] inSection:[[p objectAtIndex:0] integerValue]];
+            [t.tableView.delegate tableView:t.tableView didSelectRowAtIndexPath:ip];
+        }
+    } else if ([cmd isEqual:@"unlock"]) {
+        [GMPasscode debugEnter:arg];  // unlock <mật mã> — nhập vào màn khoá đang hiện
+    } else if ([cmd isEqual:@"suspend"]) {
+        // suspend [nobg] — về màn hình chính (nobg: không xin thêm thời gian chạy nền → app bị treo ngay, thử socket VoIP)
+        if ([arg isEqual:@"nobg"]) [GMBackground shared].debugNoBackgroundTask = YES;
+        [[UIApplication sharedApplication] performSelector:@selector(suspend)];
+    } else if ([cmd isEqual:@"schedule"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // schedule <giây> <chữ> — hẹn giờ gửi vào chat đang mở
+        NSRange s2 = [arg rangeOfString:@" "];
+        if (s2.location != NSNotFound) {
+            long long at = (long long)[[NSDate date] timeIntervalSince1970] + [[arg substringToIndex:s2.location] longLongValue];
+            [GMCore call:@"messages.send"
+                    args:@{@"peer": [(GMChatViewController *)top peer], @"text": [arg substringFromIndex:s2.location + 1], @"schedule": @(at)}
+                    done:^(id ok, NSDictionary *err) {
+                        GMLog(@"[thử] hẹn giờ → %@", err ? [err objectForKey:@"code"] : @"được");
+                    }];
+        }
+    } else if ([cmd isEqual:@"storage"]) {
+        [nav pushViewController:[[GMStorageViewController alloc] init] animated:YES];
+    } else if ([cmd isEqual:@"storagetap"] && [top isKindOfClass:[GMStorageViewController class]]) {
+        // storagetap <mục> <hàng>
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        if (p.count == 2) [(GMStorageViewController *)top debugTapSection:[[p objectAtIndex:0] integerValue] row:[[p objectAtIndex:1] integerValue]];
+    } else if ([cmd isEqual:@"sheet"]) {
+        // sheet <nút> — chọn nút của bảng chọn đang mở
+        UIActionSheet *s = nil;
+        for (UIWindow *w in [UIApplication sharedApplication].windows) {
+            if ((s = GMFindSheet(w))) break;
+        }
+        NSInteger i = arg.integerValue;
+        if (!s) {
+            GMLog(@"[thử] không thấy bảng chọn");
+        } else {
+            GMLog(@"[thử] bảng chọn: nút %ld «%@»", (long)i, [s buttonTitleAtIndex:i]);
+            if ([s.delegate respondsToSelector:@selector(actionSheet:clickedButtonAtIndex:)]) {
+                [s.delegate actionSheet:s clickedButtonAtIndex:i];
+            }
+            [s dismissWithClickedButtonIndex:i animated:YES];
+        }
+    } else if ([cmd isEqual:@"call"]) {
+        // call <lệnh lõi> [json] — ghi kết quả vào nhật ký (bỏ trường «chats»: có tên chat)
+        NSRange s2 = [arg rangeOfString:@" "];
+        NSString *method = s2.location == NSNotFound ? arg : [arg substringToIndex:s2.location];
+        NSDictionary *a = nil;
+        if (s2.location != NSNotFound) {
+            a = [NSJSONSerialization JSONObjectWithData:[[arg substringFromIndex:s2.location + 1] dataUsingEncoding:NSUTF8StringEncoding]
+                                                options:0 error:NULL];
+        }
+        long long t = GMNowMs();
+        [GMCore call:method args:a done:^(id ok, NSDictionary *err) {
+            id show = ok;
+            if ([ok isKindOfClass:[NSDictionary class]]) {
+                NSMutableDictionary *m = [ok mutableCopy];
+                if ([m objectForKey:@"chats"]) [m setObject:@([[m objectForKey:@"chats"] count]) forKey:@"chats"];
+                show = m;
+            }
+            NSString *txt = err ? [NSString stringWithFormat:@"lỗi %@", [err objectForKey:@"code"]]
+                                : [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:show options:0 error:NULL]
+                                                        encoding:NSUTF8StringEncoding];
+            GMLog(@"[thử] %@ (%lld ms) → %@", method, GMNowMs() - t, txt);
+        }];
+    } else if ([cmd isEqual:@"proxy"]) {
+        [nav pushViewController:[[GMProxyViewController alloc] init] animated:YES];
+    } else if ([cmd isEqual:@"scroll"]) {
+        UIScrollView *sv = nil;
+        for (UIView *v in top.view.subviews)
+            if ([v isKindOfClass:[UIScrollView class]]) sv = (UIScrollView *)v;
+        if ([top.view isKindOfClass:[UIScrollView class]]) sv = (UIScrollView *)top.view;
+        if ([arg isEqual:@"top"]) [sv setContentOffset:CGPointZero animated:YES];
+        else [sv setContentOffset:CGPointMake(0, MAX(0, sv.contentSize.height - sv.bounds.size.height)) animated:YES];
+    } else {
+        GMLog(@"[thử] lệnh lạ: %@", line);
+    }
+}
+
+@end
