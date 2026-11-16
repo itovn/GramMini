@@ -16,8 +16,9 @@ iOS 5.0 – 6.1.x, đã jailbreak (cần MobileSubstrate): iPhone 4 / 4S / 5, iP
 
 ## Có gì
 
-- Chat riêng / nhóm / kênh: tin chữ, trả lời, chuyển tiếp, sửa, xoá, ảnh, video (tự nén), tệp từ bộ nhớ máy, tin thoại, sticker,
-  GIF; lưu ảnh / video vào máy; hàng chờ gửi khi mất mạng.
+- Chat riêng / nhóm / kênh: tin chữ, trả lời, chuyển tiếp, sửa, ảnh, video (tự nén), tệp từ bộ nhớ máy, tin thoại, sticker (cả
+  sticker động TGS và sticker video WebM), GIF; lưu ảnh / video vào máy; hàng chờ gửi khi mất mạng.
+- Xoá tin cho cả hai bên hoặc chỉ ở máy mình; tin tự xoá (1 ngày / 1 tuần / 1 tháng) theo từng chat hoặc mặc định cho chat mới.
 - Thư mục chat (đồng bộ với tài khoản), tìm kiếm chat / người / tin nhắn, danh bạ, tạo nhóm.
 - Bộ sticker như app gốc: xem bộ, thêm / gỡ, bộ nổi bật, tìm bộ, tạo bộ riêng qua bot @Stickers.
 - **MTProxy** (`dd`, `ee` fake-TLS) và SOCKS5 — dùng được khi nhà mạng chặn Telegram.
@@ -63,4 +64,5 @@ cargo run -p gm-cli -- probe --dc 2
 ## Giấy phép
 
 [GPL-3.0](LICENSE). Phần SOCKS5 lấy từ lõi Côn Bằng TV (GPL-3.0). `core/vendor/grammers-mtsender` giữ giấy phép MIT / Apache-2.0
-của grammers; `core/vendor/opus-1.4` giữ giấy phép BSD của Opus.
+của grammers; `core/vendor/opus-1.4` giữ giấy phép BSD của Opus; `core/vendor/libvpx` (bộ giải mã VP9 cho sticker video)
+giữ giấy phép BSD + cấp quyền bằng sáng chế của WebM.

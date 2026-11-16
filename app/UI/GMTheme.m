@@ -1293,6 +1293,22 @@ static NSString *GMGrouped(long long n) {
     return [s stringByReplacingOccurrencesOfString:@"." withString:@","];
 }
 
++ (NSString *)ttlText:(NSInteger)s {
+    if (s <= 0) return @"Tắt";
+    if (s == 86400) return @"1 ngày";
+    if (s == 7 * 86400) return @"1 tuần";
+    if (s == 31 * 86400) return @"1 tháng";
+    if (s % (7 * 86400) == 0) return [NSString stringWithFormat:@"%ld tuần", (long)(s / (7 * 86400))];
+    if (s % 86400 == 0) return [NSString stringWithFormat:@"%ld ngày", (long)(s / 86400)];
+    if (s % 3600 == 0) return [NSString stringWithFormat:@"%ld giờ", (long)(s / 3600)];
+    if (s % 60 == 0) return [NSString stringWithFormat:@"%ld phút", (long)(s / 60)];
+    return [NSString stringWithFormat:@"%ld giây", (long)s];
+}
+
++ (NSArray *)ttlChoices {
+    return @[@0, @86400, @(7 * 86400), @(31 * 86400)];
+}
+
 + (UIButton *)button:(NSString *)title {
     UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
     [b setTitle:title forState:UIControlStateNormal];

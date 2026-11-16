@@ -88,6 +88,10 @@ typedef NS_ENUM(NSInteger, GMThemeMode) { GMThemeLight, GMThemeDark, GMThemeAuto
 + (UIImage *)icon:(NSString *)name;
 /// Cỡ tệp dễ đọc, dấu phẩy thập phân: «812 KB», «1,5 MB», «2,25 GB».
 + (NSString *)sizeText:(double)bytes;
+/// Thời gian tin tự xoá (giây): «Tắt», «1 ngày», «1 tuần», «1 tháng»; mức khác (đặt từ app khác) → «3 ngày», «5 giờ»…
++ (NSString *)ttlText:(NSInteger)seconds;
+/// Các mức tự xoá cho chọn (giây, NSNumber): tắt, 1 ngày, 1 tuần, 1 tháng — như app Telegram gốc.
++ (NSArray *)ttlChoices;
 /// Dòng phụ dưới tên chat từ `chat.status` / `user.status`: «trực tuyến», «truy cập lúc 14:05», «12 thành viên, 3 trực tuyến»…
 + (NSString *)statusText:(NSDictionary *)st;
 /// «đang gõ…», «Lan đang ghi âm…» (nhóm: kèm tên người).

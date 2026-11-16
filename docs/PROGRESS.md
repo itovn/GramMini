@@ -252,3 +252,10 @@
   iOS 6 (crash), tệp TGS bị ghi đè bởi ảnh tĩnh (trùng tệp tạm).
 - Sticker video (WebM) chưa chạy (hiện ảnh tĩnh) — iOS 5 / 6 không giải mã VP9.
 
+### Bản 1.2.0 — sticker video, xoá cho cả hai bên, tin tự xoá (16/11/2026 — anh giao: tự kiểm, tự phát hành)
+
+- Xoá tin «cho cả hai bên» / «chỉ ở máy tôi», xoá chat riêng cho cả hai bên, tin tự xoá theo chat + mặc định (D27). iPhone 5: xoá
+  hai tin thử trong Tin nhắn đã lưu (cả hai đường revoke) — đạt; bảng chọn, dòng «Tự xoá tin nhắn» ở thông tin chat / kênh và
+  Quyền riêng tư hiện đúng; đọc mức mặc định được. Chưa đặt tự xoá ở chat thật (sẽ hiện thông báo cho người khác).
+- Sticker video WebM (D27): crate `gm-webm` + libvpx NEON. iPhone 5: sticker video thật trong Tin nhắn đã lưu chạy 13,6 ms / khung;
+  iPad 1 (iOS 5): 19 ms / khung. Tin thử đã xoá.

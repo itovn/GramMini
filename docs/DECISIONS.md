@@ -286,3 +286,25 @@ Thiết kế đầy đủ: [THIET-KE.md](THIET-KE.md).
 - LLVM gộp sin + cos (tiny-skia xoay hình) thành `__sincosf_stret` — iOS 7+, iOS 5 / 6 không có → dyld dừng app ở lần vẽ đầu.
   Vá trong `app/Core/GMShims.c` như `__exp10` (kiểu trả về riêng cùng bố cục — SDK 9.3 không khai báo cho armv7).
 
+## D27. Xoá cho cả hai bên, tin tự xoá, sticker video WebM — 16/11/2026 (bản 1.2)
+
+- **Xoá tin**: như app gốc — chat riêng: «Xoá cho cả hai bên» (tin của mình lẫn của bên kia) hoặc «Xoá chỉ ở máy tôi»
+  (`messages.deleteMessages revoke:false`); nhóm thường: tin của mình xoá được cho mọi người, tin người khác chỉ xoá ở máy mình;
+  kênh / siêu nhóm: luôn xoá cho mọi người. Xoá cả chat riêng: thêm «Xoá cho cả hai bên» (`messages.deleteHistory revoke`, lặp
+  theo `offset` tới hết). Bot: vẫn hiện hai lựa chọn (máy chủ tự xử).
+- **Tin tự xoá**: thông tin chat → «Tự xoá tin nhắn» (Tắt / 1 ngày / 1 tuần / 1 tháng — `messages.setHistoryTTL`, áp cho tin gửi
+  từ lúc đặt, hai bên); Quyền riêng tư → «Tự xoá tin nhắn» = mức mặc định cho chat mới (`messages.setDefaultHistoryTTL`). Tin hết
+  hạn: máy chủ xoá, app nhận `msg.delete` như thường. Tin nhắn đã lưu không có (máy chủ báo `PEER_ID_INVALID`).
+- **Sticker video**: iOS 5 / 6 không giải VP9 → libvpx (BSD) vendor ở `core/vendor/libvpx` — chỉ bộ giải mã VP9, cấu hình
+  lấy từ bản dựng sẵn của Chromium (không chạy `configure` / perl của libvpx), dựng bằng `cc` như libopus. armv7: NEON
+  intrinsics (bỏ phần hợp ngữ .asm cú pháp ARM; `HAVE_NEON_ASM 0`), PC: C thuần. `CONFIG_OS_SUPPORT 0` (vpx_timer.h dùng
+  `CLOCK_MONOTONIC` — SDK 9.3 không có), một luồng, 8 bit, khung ≤ 1024.
+- Crate `gm-webm`: đọc WebM (EBML: Tracks, Cluster, SimpleBlock / BlockGroup, BlockAdditional id 1 = luồng VP9 của kênh trong
+  suốt — kiểu ffmpeg / Telegram), giải hai luồng song song, đổi YUV (BT.601 / 709, dải studio / đầy) + alpha → RGBA nhân alpha
+  thu nhỏ song tuyến (thu 2 lần = trung bình khối 2 × 2). Không panic (đọc có kiểm giới hạn, tệp ≤ 4 MB, ≤ 2000 khung).
+- Đo (sticker 512 px có kênh trong suốt, vẽ ra 256 px): iPhone 5 — C thuần 28,5 ms / khung, **NEON 11 ms** (sticker thật 13,6 ms);
+  iPad 1 (A4, iOS 5, vẽ 160 px) — NEON 19 ms. Hai hàng đợi vẽ (TGS + WebM chung): máy hai nhân vẽ hai sticker song song.
+- Lỗi gặp khi thử: (1) `Client::download_media` của grammers ghi bằng `tokio::fs::File` không flush → lần ghi cuối chạy nền sau
+  khi hàm trả về; đọc ngay sau đó thấy tệp 0 byte (TGS 15 KB thoát, WebM 200 KB dính) → `download()` tự ghi + flush.
+  (2) Hai lệnh cùng tải một tệp (ô chat vẽ lại khi tin vừa gửi) chung tệp tạm `.part` → tệp tạm riêng `.<số>.part`.
+  (3) Ô chat dùng lại từ sticker cho dòng ngày / tin hệ thống còn giữ nhãn giờ của sticker → ẩn.

@@ -43,11 +43,13 @@ biết (có trong danh sách chat / tin đã tải — access_hash lưu trong ph
 | `messages.search` | `q`, `peer`? (không có = mọi chat), `limit` (30) | `[Message + chat_name]` |
 | `messages.media` | `peer`, `kind`: photo (ảnh + video) \| file \| voice \| link \| music, `limit` (60), `offset_id`? | `[Message]` mới → cũ |
 | `chat.status` | `peer` | người: `{kind: user, bot, status: online\|offline\|recently\|week\|month\|hidden, was_online?, expires?}`; nhóm / kênh: `{kind, members, online}` |
-| `chat.info` | `peer` | `Peer` + `about`, `muted`; người: `blocked`, `common_chats`; nhóm / kênh: `members`, `online`, `can_view_members` |
+| `chat.info` | `peer` | `Peer` + `about`, `muted`, `ttl` (giây tin tự xoá, 0 = tắt); người: `blocked`, `common_chats`; nhóm / kênh: `members`, `online`, `can_view_members` |
+| `chat.ttl` | `peer`, `period` (giây; 0 = tắt) | `{ttl}` — tin mới trong chat tự xoá sau `period` (cả hai bên / mọi người); nhóm / kênh cần quyền quản trị; Tin nhắn đã lưu: `PEER_ID_INVALID` |
+| `account.defaultTtl` | `period`? | `{ttl}` — không có `period`: đọc; có: đặt mức tự xoá mặc định cho chat mới |
 | `chat.members` | `peer`, `limit` (200) | `[Peer + role: creator\|admin\|member]` |
 | `chat.mute` | `peer`, `mute` | `{muted}` |
 | `dialogs.pin` | `peer`, `pin` | `{pinned}` |
-| `dialogs.delete` | `peer` | `{}` — chat riêng: xoá lịch sử phía mình; nhóm thường: rời; kênh / siêu nhóm: rời |
+| `dialogs.delete` | `peer`, `revoke`? | `{}` — chat riêng: xoá lịch sử phía mình (`revoke`: cho cả hai bên — messages.deleteHistory lặp tới hết); nhóm thường: rời; kênh / siêu nhóm: rời |
 | `contacts.list` | — | `[Peer]` theo tên |
 | `contacts.search` | `q` (≥ 2 ký tự), `limit` (20) | `[Peer + mine]` — người / nhóm / kênh theo tên, @tên (lưu vào phiên → mở chat được) |
 | `contacts.resolve` | `username` | `Peer`; lỗi `USERNAME_NOT_OCCUPIED` |
@@ -82,12 +84,13 @@ biết (có trong danh sách chat / tin đã tải — access_hash lưu trong ph
 | `groups.delete` | `peer` | `{}` — xoá hẳn nhóm thường (người tạo) |
 | `debug.offline` | `on` | `{offline}` — thử: tạm đi qua proxy chết (không lưu cài đặt) |
 | `messages.edit` | `peer`, `id`, `text` | `{}` |
-| `messages.delete` | `peer`, `ids` | `{"deleted"}` (xoá cả hai phía nếu được) |
+| `messages.delete` | `peer`, `ids`, `revoke`? (mặc định true) | `{"deleted"}` — `revoke`: xoá cho cả hai bên / mọi người; false: chỉ phía mình (chat riêng, nhóm thường); kênh / siêu nhóm luôn xoá cho mọi người |
 | `messages.forward` | `from`, `to`, `ids` | `[Message]` (tin mới ở chat đích) |
 | `messages.read` | `peer` | `{}` |
 | `media.avatar` | `peer`, `photo`, `dc` | `{"path"}` — ảnh đại diện nhỏ (JPEG, có đệm trên đĩa) |
 | `media.photo` | `peer`, `id`, `big` | `{"path"}` — ảnh trong tin, cỡ vừa / lớn |
 | `media.sticker` | `peer`, `id` | `{"path"}` — PNG (WebP đổi sang; sticker động: ảnh thu nhỏ) |
+| `media.stickerfile` | `peer`, `id`, `kind`? (`tgs` mặc định \| `webm`) | `{"path"}` — tệp gốc sticker động (`media/s<peer>_<id>_a.tgs`, kiểm gzip) hoặc sticker video (`…_v.webm`, kiểm EBML); lỗi `NOT_ANIMATED`, `DECODE` |
 | `media.voice` | `peer`, `id` | `{"path", "duration"}` — WAV 24 kHz đơn kênh |
 | `media.document` | `peer`, `id` | `{"path"}` — tệp / video gốc (`media/d<peer>_<id>.<đuôi>`); tải có sự kiện `media.progress` |
 | `media.thumb` | `peer`, `id` | `{"path"}` — ảnh xem trước JPEG của video / tệp |
@@ -132,3 +135,13 @@ Lỗi chung: `FLOOD_WAIT` (kèm `value` giây), `NETWORK`, `NOT_STARTED`, `BAD_A
 | `outbox.sent` | `local_id`, `peer`, `msg` — tin trong hàng chờ đã gửi |
 | `outbox.failed` | `local_id`, `peer`, `code`, `message` — máy chủ từ chối tin trong hàng chờ |
 | `cache.cleared` | — lõi vừa xoá tệp đệm (tự dọn / `cache.clear`): app quên đường dẫn cũ |
+
+## Sticker động / video (đồng bộ, gọi ở hàng đợi nền)
+
+- `gm_lottie_open(path) → anim`, `gm_lottie_info(anim, &fps, &frames, &w, &h)`, `gm_lottie_render(anim, frame, buf, w, h)`,
+  `gm_lottie_close(anim)` — TGS (crate gm-lottie, D26); hoạt hình bất biến, vẽ khung nào cũng được, luồng nào cũng được.
+- `gm_webm_open(path) → video`, `gm_webm_info(…)`, `gm_webm_render(video, frame, buf, w, h)`, `gm_webm_close(video)` — sticker
+  video WebM / VP9 (crate gm-webm + libvpx, D27); cùng cách gọi nhưng có trạng thái (giải mã tuần tự): mỗi video chỉ dùng trên
+  một luồng tại một lúc, đi tới thì nhanh, lùi lại thì giải lại từ khung khoá.
+- `buf`: RGBA đã nhân alpha, `w × h × 4` byte (`kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big`), hình thu vừa khung,
+  giữ tỉ lệ, căn giữa. Trả 0 nếu vẽ được.

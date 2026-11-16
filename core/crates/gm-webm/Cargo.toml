@@ -1,0 +1,11 @@
+[package]
+name = "gm-webm"
+description = "GramMini: sticker video Telegram (WebM / VP9 có kênh trong suốt) — đọc WebM bằng Rust, giải mã VP9 bằng libvpx (vendor/libvpx, dựng bằng cc)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+links = "vpx"
+
+[build-dependencies]
+cc = "1"

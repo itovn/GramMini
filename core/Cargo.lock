@@ -482,6 +482,7 @@ dependencies = [
  "gm-lottie",
  "gm-net",
  "gm-opus",
+ "gm-webm",
  "grammers-client",
  "grammers-mtsender",
  "grammers-session",
@@ -518,6 +519,7 @@ dependencies = [
  "gm-core",
  "gm-lottie",
  "gm-net",
+ "gm-webm",
  "serde_json",
  "tokio",
 ]
@@ -548,6 +550,13 @@ dependencies = [
 
 [[package]]
 name = "gm-opus"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "gm-webm"
 version = "0.1.0"
 dependencies = [
  "cc",

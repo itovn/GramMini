@@ -12,6 +12,9 @@ NSString *const GMChatMutedNotification = @"GMChatMuted";
 
 typedef NS_ENUM(NSInteger, GMInfoSection) { GMInfoHead, GMInfoRows, GMInfoNotify, GMInfoShared, GMInfoMembers, GMInfoCount };
 
+@interface GMChatInfoViewController () <UIActionSheetDelegate>
+@end
+
 @implementation GMChatInfoViewController {
     NSDictionary *_info;
     NSArray *_rows;     // @[tiêu đề, giá trị]
@@ -92,7 +95,7 @@ static NSString *GMPrettyPhone(NSString *p) {
     switch (s) {
         case GMInfoHead: return 1;
         case GMInfoRows: return [self isSaved] ? 0 : _rows.count;
-        case GMInfoNotify: return [self isSaved] || !_info ? 0 : ([self canRename] ? 2 : 1);
+        case GMInfoNotify: return [self isSaved] || !_info ? 0 : [self notifyRows].count;
         case GMInfoShared: return 4;
         default: return _members.count;
     }
@@ -157,10 +160,18 @@ static NSString *GMPrettyPhone(NSString *p) {
         c.detailTextLabel.numberOfLines = 0;
         return c;
     }
-    if (ip.section == GMInfoNotify && ip.row == 1) {
+    NSString *nk = ip.section == GMInfoNotify ? [[self notifyRows] objectAtIndex:ip.row] : nil;
+    if ([nk isEqual:@"rename"]) {
         UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
         c.textLabel.text = @"Sửa tên liên hệ";
         c.textLabel.textColor = [GMTheme accent];
+        return c;
+    }
+    if ([nk isEqual:@"ttl"]) {
+        UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+        c.textLabel.text = @"Tự xoá tin nhắn";
+        c.detailTextLabel.text = [GMTheme ttlText:[GMVal(_info, @"ttl") integerValue]];
+        c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         return c;
     }
     if (ip.section == GMInfoNotify) {
@@ -196,8 +207,10 @@ static NSString *GMPrettyPhone(NSString *p) {
         if ([[row objectAtIndex:0] isEqual:@"điện thoại"]) v = [v stringByReplacingOccurrencesOfString:@" " withString:@""];
         [UIPasteboard generalPasteboard].string = v;
         [GMTheme toast:@"Đã sao chép" in:self.navigationController.view];
-    } else if (ip.section == GMInfoNotify && ip.row == 1) {
+    } else if (ip.section == GMInfoNotify && [[[self notifyRows] objectAtIndex:ip.row] isEqual:@"rename"]) {
         [self renameContact];
+    } else if (ip.section == GMInfoNotify && [[[self notifyRows] objectAtIndex:ip.row] isEqual:@"ttl"]) {
+        [self chooseTtlFrom:[tv rectForRowAtIndexPath:ip]];
     } else if (ip.section == GMInfoShared) {
         GMSharedMediaViewController *m = [[GMSharedMediaViewController alloc] init];
         m.peer = self.peer;
@@ -214,6 +227,44 @@ static NSString *GMPrettyPhone(NSString *p) {
 
 - (BOOL)canRename {
     return [self isUser] && ![self isSaved] && ![GMVal(_info, @"bot") boolValue];
+}
+
+/// Dòng của mục thông báo: thông báo, tự xoá tin (không có với bot; nhóm / kênh cần quyền quản trị — máy chủ báo lỗi nếu
+/// không có), sửa tên liên hệ.
+- (NSArray *)notifyRows {
+    NSMutableArray *r = [NSMutableArray arrayWithObject:@"notify"];
+    if (![GMVal(_info, @"bot") boolValue]) [r addObject:@"ttl"];
+    if ([self canRename]) [r addObject:@"rename"];
+    return r;
+}
+
+- (void)chooseTtlFrom:(CGRect)rect {
+    UIActionSheet *s = [[UIActionSheet alloc] initWithTitle:[self isUser] ? @"Tin nhắn mới trong chat này tự xoá sau (cả hai bên)"
+                                                                          : @"Tin nhắn mới tự xoá sau (với mọi người)"
+                                                   delegate:self cancelButtonTitle:nil destructiveButtonTitle:nil otherButtonTitles:nil];
+    for (NSNumber *t in [GMTheme ttlChoices]) [s addButtonWithTitle:[GMTheme ttlText:t.integerValue]];
+    s.cancelButtonIndex = [s addButtonWithTitle:@"Huỷ"];
+    [s showFromRect:rect inView:self.tableView animated:YES];
+}
+
+- (void)actionSheet:(UIActionSheet *)sheet clickedButtonAtIndex:(NSInteger)i {
+    NSArray *choices = [GMTheme ttlChoices];
+    if (i < 0 || i >= (NSInteger)choices.count) return;
+    [self setTtl:[[choices objectAtIndex:i] integerValue]];
+}
+
+- (void)setTtl:(NSInteger)period {
+    if (period == [GMVal(_info, @"ttl") integerValue]) return;
+    [GMCore call:@"chat.ttl" args:@{@"peer": self.peer, @"period": @(period)} done:^(id ok, NSDictionary *err) {
+        if (err) {
+            [GMTheme toast:GMErrorText(err) in:self.navigationController.view];
+            return;
+        }
+        NSMutableDictionary *i = [_info mutableCopy];
+        [i setObject:@(period) forKey:@"ttl"];
+        _info = i;
+        [self.tableView reloadData];
+    }];
 }
 
 /// Tên mình lưu cho người này (Telegram hiện tên này thay tên họ tự đặt — vd thông báo hiện tên đã lưu thay tên người đó tự đặt).

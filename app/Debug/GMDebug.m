@@ -2,6 +2,8 @@
 #import "GMAppDelegate.h"
 #import "GMChatListViewController.h"
 #import "GMChatViewController.h"
+#import "GMChatInfoViewController.h"
+#import "GMLottieView.h"
 #import "GMCore.h"
 #import "GMLog.h"
 #import "GMProxyViewController.h"
@@ -46,6 +48,24 @@ static UIActionSheet *GMFindSheet(UIView *v) {
     }
 }
 
+static void GMFindText(UIView *v, NSString *text) {
+    if ([v isKindOfClass:[UILabel class]] && [((UILabel *)v).text isEqual:text]) {
+        NSMutableString *chain = [NSMutableString string];
+        for (UIView *p = v; p; p = p.superview) {
+            [chain appendFormat:@" ← %@ %@%@%@", NSStringFromClass([p class]), NSStringFromCGRect(p.frame), p.hidden ? @" ẩn" : @"",
+                                p.alpha < 0.01 ? @" alpha 0" : @""];
+            if ([p isKindOfClass:[UITableViewCell class]]) {
+                UITableView *tv = (UITableView *)p.superview;
+                while (tv && ![tv isKindOfClass:[UITableView class]]) tv = (UITableView *)tv.superview;
+                NSIndexPath *ip = [tv indexPathForCell:(UITableViewCell *)p];
+                [chain appendFormat:@" (hàng %@)", ip ? @(ip.row) : @"không thuộc bảng"];
+            }
+        }
+        GMLog(@"[thử] thấy «%@»:%@", text, chain);
+    }
+    for (UIView *s in v.subviews) GMFindText(s, text);
+}
+
 + (void)run:(NSString *)line {
     GMAppDelegate *app = (GMAppDelegate *)[UIApplication sharedApplication].delegate;
     UINavigationController *nav = (UINavigationController *)app.tabs.selectedViewController;  // thanh điều hướng của mục đang chọn
@@ -63,6 +83,50 @@ static UIActionSheet *GMFindSheet(UIView *v) {
         [nav popViewControllerAnimated:YES];
     } else if ([cmd isEqual:@"send"] && [top isKindOfClass:[GMChatViewController class]]) {
         [(GMChatViewController *)top sendText:arg];
+    } else if ([cmd isEqual:@"delmsg"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // delmsg <k> <0|1> — xoá tin thứ k từ dưới lên; 0 = chỉ ở máy tôi, 1 = cho mọi người
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        BOOL revoke = p.count < 2 || [[p objectAtIndex:1] boolValue];
+        [(GMChatViewController *)top debugDeleteFromBottom:[[p objectAtIndex:0] integerValue] revoke:revoke];
+    } else if ([cmd isEqual:@"playfile"]) {
+        // playfile <đường dẫn .tgs / .webm> [số ô] — phát tệp có sẵn trong các ô 160 pt đè lên màn (đo tốc độ); «playfile» trống = gỡ
+        static NSMutableArray *views;
+        for (UIView *v in views) [v removeFromSuperview];
+        views = [NSMutableArray array];
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        NSString *path = p.count ? [p objectAtIndex:0] : @"";
+        NSInteger count = p.count > 1 ? MAX(1, MIN(4, [[p objectAtIndex:1] integerValue])) : 1;
+        UIView *host = app.window;
+        for (NSInteger i = 0; path.length && i < count; i++) {
+            GMLottieView *lv = [[GMLottieView alloc] initWithFrame:CGRectMake(i % 2 * 160, 80 + i / 2 * 170, 160, 160)];
+            lv.backgroundColor = [UIColor colorWithWhite:0.5 alpha:0.3];
+            [host addSubview:lv];
+            [lv playFile:path];
+            [views addObject:lv];
+        }
+    } else if ([cmd isEqual:@"delservice"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugDeleteServiceFromBottom:arg.integerValue];
+    } else if ([cmd isEqual:@"findtext"]) {
+        // findtext <chữ> — nhãn đang hiện chữ đó: chuỗi view cha (lớp, khung, ẩn) — dò phần tử thừa trên màn
+        GMFindText([UIApplication sharedApplication].keyWindow, arg);
+    } else if ([cmd isEqual:@"ttlsaved"]) {
+        // ttlsaved <giây> — đặt tin tự xoá cho Tin nhắn đã lưu (không cần biết id của mình)
+        if (app.list.myId) {
+            [GMCore call:@"chat.ttl" args:@{@"peer": app.list.myId, @"period": @(arg.integerValue)} done:^(id ok, NSDictionary *err) {
+                GMLog(@"[thử] chat.ttl → %@", err ? [err objectForKey:@"code"] : [ok description]);
+            }];
+        }
+    } else if ([cmd isEqual:@"infopeer"]) {
+        // infopeer <dòng> — mở màn thông tin của chat ở dòng đó mà không mở chat (không đánh dấu đã đọc)
+        NSDictionary *d = [app.list debugDialogAt:arg.integerValue];
+        if (d) {
+            GMChatInfoViewController *i = [[GMChatInfoViewController alloc] init];
+            i.peer = [d objectForKey:@"peer"];
+            i.kind = [d objectForKey:@"kind"];
+            i.myId = app.list.myId;
+            i.name = [d objectForKey:@"name"];
+            [nav pushViewController:i animated:YES];
+        }
     } else if ([cmd isEqual:@"tapmsg"] && [top isKindOfClass:[GMChatViewController class]]) {
         [(GMChatViewController *)top debugTapFromBottom:arg.integerValue];
     } else if ([cmd isEqual:@"copymsg"] && [top isKindOfClass:[GMChatViewController class]]) {
@@ -102,12 +166,13 @@ static UIActionSheet *GMFindSheet(UIView *v) {
     } else if ([cmd isEqual:@"dismiss"]) {
         [app.tabs dismissViewControllerAnimated:YES completion:nil];
     } else if ([cmd isEqual:@"sel"]) {
-        // sel <tên hàm không đối số> — gọi trên màn trên cùng (toggleEdit, showInfo, stickerTapped, cancelCompose…)
+        // sel <tên hàm không đối số hoặc một đối số sender> — gọi trên màn trên cùng (toggleEdit, showInfo, gmDelete:…). Luôn
+        // truyền nil làm đối số: hàm «x:» gọi không đối số thì sender là rác → bản dựng debug (ARC -O0) giữ nó là sập.
         SEL s = NSSelectorFromString(arg);
         if ([top respondsToSelector:s]) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-            [top performSelector:s];
+            [top performSelector:s withObject:nil];
 #pragma clang diagnostic pop
         } else {
             GMLog(@"[thử] %@ không có %@", NSStringFromClass([top class]), arg);

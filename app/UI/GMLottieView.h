@@ -1,10 +1,11 @@
 #import <UIKit/UIKit.h>
 
-/// Phát sticker động TGS (Lottie): lõi Rust vẽ từng khung (gm_lottie_render, crate gm-lottie) ở một hàng đợi nền dùng chung,
-/// ảnh khung đặt vào layer.contents. Lặp liên tục khi đang hiện trên màn hình và app đang mở; tạm dừng khi cuộn (đồng hồ chỉ chạy
+/// Phát sticker động TGS (Lottie — lõi Rust vẽ từng khung: gm_lottie_render, crate gm-lottie) và sticker video WebM (VP9 có
+/// kênh trong suốt — gm_webm_render, crate gm-webm + libvpx; chọn theo đuôi tệp .webm) ở hàng đợi nền, ảnh khung đặt vào
+/// layer.contents. Lặp liên tục khi đang hiện trên màn hình và app đang mở; tạm dừng khi cuộn (đồng hồ chỉ chạy
 /// ở chế độ mặc định của run loop), khi rời cửa sổ. Tối đa 30 khung / giây, cỡ vẽ = cỡ view × độ phân giải màn, tối đa 256 px.
 @interface GMLottieView : UIView
-/// Mở tệp .tgs và phát. Gọi lại với tệp khác thì đổi hoạt hình.
+/// Mở tệp .tgs / .webm và phát. Gọi lại với tệp khác thì đổi hoạt hình.
 - (void)playFile:(NSString *)path;
 /// Dừng, bỏ hoạt hình (ô dùng lại).
 - (void)stop;

@@ -464,24 +464,33 @@ static const CGFloat kRowH = 72, kAvatar = 54, kCard = 8;
     NSDictionary *d = [self dialogFor:peer index:&i];
     if (!d) return;
     NSString *k = GMVal(d, @"kind");
+    // Chat riêng (không phải bot): như app gốc — xoá cho cả hai bên hoặc chỉ ở máy mình
+    BOOL both = [k isEqual:@"user"] && ![self isSaved:d] && ![GMVal(d, @"bot") boolValue];
     NSString *msg = [self isSaved:d] ? @"Xoá mọi tin trong Tin nhắn đã lưu?"
                     : [k isEqual:@"channel"] ? @"Rời kênh này?"
                     : [k isEqual:@"group"] ? @"Rời nhóm và xoá chat này?"
-                                           : @"Xoá chat này khỏi máy bạn? (Bên kia vẫn còn tin.)";
+                    : both ? @"Xoá chat này?"
+                           : @"Xoá chat này khỏi máy bạn?";
     UIActionSheet *s = [[UIActionSheet alloc] initWithTitle:msg delegate:self cancelButtonTitle:nil destructiveButtonTitle:nil
                                           otherButtonTitles:nil];
-    s.destructiveButtonIndex = [s addButtonWithTitle:[self deleteTitle:d]];
-    s.cancelButtonIndex = [s addButtonWithTitle:@"Huỷ"];
     __weak GMChatListViewController *ws = self;
-    _actions = @[^{ [ws deletePeer:peer]; }];
+    if (both) {
+        s.destructiveButtonIndex = [s addButtonWithTitle:@"Xoá cho cả hai bên"];
+        [s addButtonWithTitle:@"Xoá chỉ ở máy tôi"];
+        _actions = @[^{ [ws deletePeer:peer revoke:YES]; }, ^{ [ws deletePeer:peer revoke:NO]; }];
+    } else {
+        s.destructiveButtonIndex = [s addButtonWithTitle:[self deleteTitle:d]];
+        _actions = @[^{ [ws deletePeer:peer revoke:NO]; }];
+    }
+    s.cancelButtonIndex = [s addButtonWithTitle:@"Huỷ"];
     NSUInteger row = [_shown indexOfObject:d];
     CGRect from = row == NSNotFound ? CGRectMake(0, self.tableView.contentOffset.y, self.tableView.bounds.size.width, 44)
                                     : [self.tableView rectForRowAtIndexPath:[NSIndexPath indexPathForRow:row inSection:0]];
     [s showFromRect:from inView:self.tableView animated:YES];
 }
 
-- (void)deletePeer:(NSString *)peer {
-    [GMCore call:@"dialogs.delete" args:@{@"peer": peer} done:^(id ok, NSDictionary *err) {
+- (void)deletePeer:(NSString *)peer revoke:(BOOL)revoke {
+    [GMCore call:@"dialogs.delete" args:@{@"peer": peer, @"revoke": @(revoke)} done:^(id ok, NSDictionary *err) {
         if (err) {
             [GMTheme toast:GMErrorText(err) in:self.navigationController.view];
             return;
@@ -874,6 +883,10 @@ static const CGFloat kRowH = 72, kAvatar = 54, kCard = 8;
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     [self openRow:indexPath.row];
+}
+
+- (NSDictionary *)debugDialogAt:(NSInteger)row {
+    return row >= 0 && row < (NSInteger)_shown.count ? [_shown objectAtIndex:row] : nil;
 }
 
 - (void)openRow:(NSInteger)row {

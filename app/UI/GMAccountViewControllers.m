@@ -297,6 +297,7 @@ static NSString *GMPrivacyText(NSString *v) {
 @implementation GMPrivacyViewController {
     NSDictionary *_privacy;
     NSString *_editing;
+    NSNumber *_ttl;  // tự xoá mặc định cho chat mới (giây), nil = chưa đọc
 }
 
 - (instancetype)init {
@@ -314,6 +315,10 @@ static NSString *GMPrivacyText(NSString *v) {
         if (ok) _privacy = ok;
         [self.tableView reloadData];
     }];
+    [GMCore call:@"account.defaultTtl" args:nil done:^(id ok, NSDictionary *err) {
+        if (ok) _ttl = GMVal(ok, @"ttl");
+        [self.tableView reloadData];
+    }];
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tv {
@@ -321,11 +326,15 @@ static NSString *GMPrivacyText(NSString *v) {
 }
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
-    return s == 0 ? GMPrivacyKeys().count : 2;
+    return s == 0 ? GMPrivacyKeys().count : 3;
 }
 
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
     return s == 0 ? @"Quyền riêng tư" : @"Bảo mật";
+}
+
+- (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
+    return s == 1 ? @"Tự xoá tin nhắn: tin trong mọi chat mới bạn bắt đầu sẽ tự xoá sau thời gian đã chọn (cả hai bên)." : nil;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
@@ -345,6 +354,9 @@ static NSString *GMPrivacyText(NSString *v) {
     if (ip.row == 0) {
         c.textLabel.text = @"Mật mã";
         c.detailTextLabel.text = [GMPasscode enabled] ? @"Đang bật" : @"Tắt";
+    } else if (ip.row == 2) {
+        c.textLabel.text = @"Tự xoá tin nhắn";
+        c.detailTextLabel.text = _ttl ? [GMTheme ttlText:_ttl.integerValue] : nil;
     } else {
         c.textLabel.text = @"Phiên đăng nhập";
     }
@@ -353,6 +365,16 @@ static NSString *GMPrivacyText(NSString *v) {
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [tv deselectRowAtIndexPath:ip animated:YES];
+    if (ip.section == 1 && ip.row == 2) {
+        _editing = nil;
+        UIActionSheet *s = [[UIActionSheet alloc] initWithTitle:@"Tin nhắn trong chat mới tự xoá sau" delegate:self cancelButtonTitle:nil
+                                         destructiveButtonTitle:nil otherButtonTitles:nil];
+        for (NSNumber *t in [GMTheme ttlChoices]) [s addButtonWithTitle:[GMTheme ttlText:t.integerValue]];
+        s.cancelButtonIndex = [s addButtonWithTitle:@"Huỷ"];
+        objc_setAssociatedObject(s, "ttl", @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [s showFromRect:[tv rectForRowAtIndexPath:ip] inView:tv animated:YES];
+        return;
+    }
     if (ip.section == 1) {
         UIViewController *vc = ip.row == 0 ? [[GMPasscodeSettingsViewController alloc] init] : [[GMSessionsViewController alloc] init];
         [self.navigationController pushViewController:vc animated:YES];
@@ -371,6 +393,20 @@ static NSString *GMPrivacyText(NSString *v) {
 }
 
 - (void)actionSheet:(UIActionSheet *)sheet clickedButtonAtIndex:(NSInteger)i {
+    if (objc_getAssociatedObject(sheet, "ttl")) {
+        NSArray *choices = [GMTheme ttlChoices];
+        if (i < 0 || i >= (NSInteger)choices.count) return;
+        NSNumber *period = [choices objectAtIndex:i];
+        [GMCore call:@"account.defaultTtl" args:@{@"period": period} done:^(id ok, NSDictionary *err) {
+            if (err) {
+                [GMTheme toast:GMErrorText(err) in:self.navigationController.view];
+                return;
+            }
+            _ttl = period;
+            [self.tableView reloadData];
+        }];
+        return;
+    }
     if (i < 0 || i > 2 || !_editing) return;
     NSString *value = [@[@"everybody", @"contacts", @"nobody"] objectAtIndex:i];
     NSString *key = _editing;

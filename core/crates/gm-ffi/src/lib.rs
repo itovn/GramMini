@@ -164,3 +164,55 @@ pub extern "C" fn gm_lottie_close(anim: *mut c_void) {
     }
 }
 
+// ───── Sticker video (WebM / VP9): giải mã tuần tự nên có trạng thái — mỗi video chỉ dùng trên một luồng tại một lúc ─────
+
+/// Mở tệp WebM (VP9, có thể có kênh trong suốt) → con trỏ video (NULL nếu không đọc được). Đóng bằng `gm_webm_close`.
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_webm_open(path: *const c_char) -> *mut c_void {
+    match std::fs::read(cstr(path)).ok().and_then(gm_webm::Video::parse) {
+        Some(v) => Box::into_raw(Box::new(v)) as *mut c_void,
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// Thông tin: số khung / giây, số khung, kích thước gốc. Trả 0 nếu được.
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_webm_info(video: *const c_void, fps: *mut f64, frames: *mut c_int, w: *mut c_int, h: *mut c_int) -> c_int {
+    let Some(v) = (unsafe { (video as *const gm_webm::Video).as_ref() }) else { return 1 };
+    let (vw, vh) = v.size();
+    unsafe {
+        if !fps.is_null() {
+            *fps = v.frame_rate();
+        }
+        if !frames.is_null() {
+            *frames = v.frame_count() as c_int;
+        }
+        if !w.is_null() {
+            *w = vw as c_int;
+        }
+        if !h.is_null() {
+            *h = vh as c_int;
+        }
+    }
+    0
+}
+
+/// Vẽ khung `frame` vào `buf` RGBA đã nhân alpha, `width × height × 4` byte — như `gm_lottie_render`. Đi tới thì chỉ giải
+/// các khung còn thiếu; lùi lại thì giải lại từ khung khoá. Trả 0 nếu được.
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_webm_render(video: *mut c_void, frame: c_int, buf: *mut u8, width: c_int, height: c_int) -> c_int {
+    let Some(v) = (unsafe { (video as *mut gm_webm::Video).as_mut() }) else { return 1 };
+    if buf.is_null() || width <= 0 || height <= 0 || width > 2048 || height > 2048 || frame < 0 {
+        return 2;
+    }
+    let len = width as usize * height as usize * 4;
+    let slice = unsafe { std::slice::from_raw_parts_mut(buf, len) };
+    if v.render(frame as usize, slice, width as usize, height as usize) { 0 } else { 3 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_webm_close(video: *mut c_void) {
+    if !video.is_null() {
+        drop(unsafe { Box::from_raw(video as *mut gm_webm::Video) });
+    }
+}

@@ -8,6 +8,8 @@
 - (void)reload;
 /// Mở chat ở hàng thứ `row` (công cụ thử).
 - (void)openRow:(NSInteger)row;
+/// Công cụ thử: chat ở dòng `row` (không mở chat — không đánh dấu đã đọc).
+- (NSDictionary *)debugDialogAt:(NSInteger)row;
 /// Chat theo khoá peer (nil nếu chưa có trong danh sách).
 - (NSDictionary *)dialogForPeer:(NSString *)peer;
 /// Tổng tin chưa đọc của các chat không tắt tiếng.

@@ -130,6 +130,64 @@ pub fn run(args: Vec<String>) -> i32 {
                      a.frame_rate(), ms as f64 / n as f64);
             return Ok(());
         }
+        if cmd == "webm" {
+            // webm <tệp .webm> <thư mục ra> [cỡ px] [số khung] [số lượt] — giải mã thử sticker video (mọi khung, tuần tự như app,
+            // lặp [số lượt] lần để đo cả lúc quay về đầu) → sheet.png (nền ô cờ để thấy kênh trong suốt)
+            let [src, dir, more @ ..] = rest.as_slice() else { return Err("webm <tệp> <thư mục> [cỡ] [số khung] [số lượt]".into()) };
+            let size: usize = more.first().and_then(|s| s.parse().ok()).unwrap_or(256);
+            let want: usize = more.get(1).and_then(|s| s.parse().ok()).unwrap_or(8);
+            let loops: usize = more.get(2).and_then(|s| s.parse().ok()).unwrap_or(1).max(1);
+            let data = std::fs::read(src).map_err(|e| e.to_string())?;
+            let t = Instant::now();
+            let mut v = gm_webm::Video::parse(data).ok_or("không đọc được WebM (VP9)")?;
+            let parse_ms = t.elapsed().as_secs_f64() * 1000.0;
+            let frames = v.frame_count();
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            let n = want.min(frames).max(1);
+            let pick: Vec<usize> = (0..n).map(|k| k * frames / n).collect();
+            let cols = n.min(4);
+            let rows = n.div_ceil(cols);
+            let mut sheet = vec![255u8; cols * size * rows * size * 4];
+            let mut buf = vec![0u8; size * size * 4];
+            let mut fails = 0;
+            let t = Instant::now();
+            for lp in 0..loops {
+                for f in 0..frames {
+                    if !v.render(f, &mut buf, size, size) {
+                        fails += 1;
+                        continue;
+                    }
+                    let Some(k) = pick.iter().position(|&p| p == f) else { continue };
+                    if lp != 0 {
+                        continue;
+                    }
+                    let (cx, cy) = ((k % cols) * size, (k / cols) * size);
+                    for y in 0..size {
+                        for x in 0..size {
+                            let s = (y * size + x) * 4;
+                            let d = ((cy + y) * cols * size + cx + x) * 4;
+                            // Trộn lên nền ô cờ (bộ đệm đã nhân alpha)
+                            let bg: u32 = if ((x / 16) + (y / 16)) % 2 == 0 { 255 } else { 200 };
+                            let al = buf[s + 3] as u32;
+                            for c in 0..3 {
+                                sheet[d + c] = (buf[s + c] as u32 + (255 - al) * bg / 255).min(255) as u8;
+                            }
+                            sheet[d + 3] = 255;
+                        }
+                    }
+                }
+            }
+            let ms = t.elapsed().as_secs_f64() * 1000.0;
+            let file = std::fs::File::create(format!("{dir}/sheet.png")).map_err(|e| e.to_string())?;
+            let mut enc = png::Encoder::new(std::io::BufWriter::new(file), (cols * size) as u32, (rows * size) as u32);
+            enc.set_color(png::ColorType::Rgba);
+            enc.set_depth(png::BitDepth::Eight);
+            enc.write_header().map_err(|e| e.to_string())?.write_image_data(&sheet).map_err(|e| e.to_string())?;
+            let (w, h) = v.size();
+            println!("{src}: {w}x{h}, {:.2} fps, {frames} khung, alpha: {}; đọc {parse_ms:.1} ms; giải + vẽ {} khung {size}px: {ms:.0} ms ({:.2} ms/khung), lỗi {fails}",
+                     v.frame_rate(), v.has_alpha(), frames * loops, ms / (frames * loops) as f64);
+            return Ok(());
+        }
         if cmd == "voice" {
             // voice decode <ogg> <wav> | voice encode <wav> <ogg>
             let [op, src, dst] = rest.as_slice() else { return Err("voice decode|encode <vào> <ra>".into()) };

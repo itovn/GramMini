@@ -235,13 +235,26 @@ impl Core {
         true
     }
 
-    /// Tải về `path` (qua tệp tạm `.part`, xong mới đổi tên).
+    /// Tải về `path` (qua tệp tạm `.<số>.part` riêng của lần tải, xong mới đổi tên).
     async fn download(self: &Arc<Self>, loc: &crate::media::Loc, path: &std::path::Path) -> Result<(), CoreError> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| CoreError::new("IO", e.to_string()))?;
         }
-        let tmp = path.with_extension("part");
-        let r = tokio::time::timeout(Duration::from_secs(120), self.client.download_media(loc, &tmp)).await;
+        let tmp = part_path(path);
+        // Tự ghi tệp (không dùng Client::download_media): grammers ghi bằng tokio::fs::File mà không flush → lần ghi cuối còn
+        // chạy nền sau khi hàm trả về; đọc ngay sau đó (sticker video ~200 KB) thấy tệp 0 byte (16/11/2026)
+        let fetch = async {
+            use tokio::io::AsyncWriteExt;
+            let io = |e: std::io::Error| CoreError::new("IO", e.to_string());
+            let mut f = tokio::fs::File::create(&tmp).await.map_err(io)?;
+            let mut it = self.client.iter_download(loc);
+            while let Some(chunk) = it.next().await? {
+                f.write_all(&chunk).await.map_err(io)?;
+            }
+            f.flush().await.map_err(io)?;
+            Ok::<(), CoreError>(())
+        };
+        let r = tokio::time::timeout(Duration::from_secs(120), fetch).await;
         match r {
             Ok(Ok(())) => {
                 std::fs::rename(&tmp, path).map_err(|e| CoreError::new("IO", e.to_string()))?;
@@ -265,7 +278,7 @@ impl Core {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| CoreError::new("IO", e.to_string()))?;
         }
-        let tmp = path.with_extension("part");
+        let tmp = part_path(path);
         let mut f = tokio::fs::File::create(&tmp).await.map_err(|e| CoreError::new("IO", e.to_string()))?;
         let total = loc.size.unwrap_or(0);
         let mut it = self.client.iter_download(loc);
@@ -574,6 +587,7 @@ impl Core {
             v["muted"] = json!(muted(&u.notify_settings));
             v["blocked"] = json!(u.blocked);
             v["common_chats"] = json!(u.common_chats_count);
+            v["ttl"] = json!(u.ttl_period.unwrap_or(0));
             return Ok(v);
         }
         let full = if p.id().kind() == grammers_session::types::PeerKind::Chat {
@@ -586,6 +600,7 @@ impl Core {
             enums::ChatFull::Full(c) => {
                 v["about"] = json!(c.about);
                 v["muted"] = json!(muted(&c.notify_settings));
+                v["ttl"] = json!(c.ttl_period.unwrap_or(0));
                 if let enums::ChatParticipants::Participants(x) = c.participants {
                     v["members"] = json!(x.participants.len());
                 }
@@ -593,6 +608,7 @@ impl Core {
             enums::ChatFull::ChannelFull(c) => {
                 v["about"] = json!(c.about);
                 v["muted"] = json!(muted(&c.notify_settings));
+                v["ttl"] = json!(c.ttl_period.unwrap_or(0));
                 v["members"] = json!(c.participants_count);
                 v["online"] = json!(c.online_count);
                 v["can_view_members"] = json!(c.can_view_participants);
@@ -1419,6 +1435,15 @@ impl Core {
                 if ids.is_empty() {
                     return Err(CoreError::new("BAD_ARGS", "thiếu «ids»"));
                 }
+                // revoke (mặc định có): xoá cho cả hai bên / mọi người; không: chỉ xoá phía mình (chat riêng, nhóm thường — kênh /
+                // siêu nhóm thì luôn xoá cho mọi người)
+                let revoke = a.get("revoke").and_then(Value::as_bool).unwrap_or(true);
+                if !revoke && peer.id.kind() != grammers_session::types::PeerKind::Channel {
+                    use grammers_client::tl::{enums, functions};
+                    let enums::messages::AffectedMessages::Messages(r) =
+                        self.client.invoke(&functions::messages::DeleteMessages { revoke: false, id: ids }).await?;
+                    return Ok(json!({"deleted": r.pts_count}));
+                }
                 let n = self.client.delete_messages(peer, &ids).await?;
                 Ok(json!({"deleted": n}))
             }
@@ -1461,11 +1486,18 @@ impl Core {
                 Ok(json!({"path": path}))
             }
             "media.stickerfile" => {
-                // Sticker động TGS (Lottie nén gzip): tải nguyên tệp → media/s<peer>_<id>.tgs (app vẽ bằng gm_lottie_*)
+                // Sticker động: TGS (Lottie nén gzip → media/s<peer>_<id>_a.tgs, app vẽ bằng gm_lottie_*) hoặc sticker video
+                // (`kind: "webm"`: WebM / VP9 → media/s<peer>_<id>_v.webm, app giải mã bằng gm_webm_*) — tải nguyên tệp
                 let peer = self.peer_ref(a).await?;
                 let id = a.get("id").and_then(Value::as_i64).ok_or_else(|| CoreError::new("BAD_ARGS", "thiếu «id»"))?;
-                // Tên riêng «…_a.tgs»: tệp tạm «.part» không trùng với ảnh tĩnh của cùng tin (media.sticker tải song song)
-                let path = self.cfg.data_dir.join("media").join(format!("s{}_{}_a.tgs", arg_str(a, "peer")?, id));
+                let webm = a.get("kind").and_then(Value::as_str) == Some("webm");
+                let (suffix, mime, magic): (&str, &str, &[u8]) = if webm {
+                    ("v.webm", "video/webm", &[0x1a, 0x45, 0xdf, 0xa3])
+                } else {
+                    ("a.tgs", "application/x-tgsticker", &[0x1f, 0x8b])
+                };
+                // Tên riêng «…_a.tgs» / «…_v.webm»: tệp tạm «.part» không trùng với ảnh tĩnh của cùng tin (media.sticker tải song song)
+                let path = self.cfg.data_dir.join("media").join(format!("s{}_{}_{suffix}", arg_str(a, "peer")?, id));
                 if self.cache.hit(&path) {
                     return Ok(json!({"path": path}));
                 }
@@ -1474,16 +1506,21 @@ impl Core {
                 let Some(Media::Sticker(s)) = msg.as_ref().and_then(|m| m.media()) else {
                     return Err(CoreError::new("NO_MEDIA", "Tin này không còn sticker."));
                 };
-                if s.document.mime_type() != Some("application/x-tgsticker") {
-                    return Err(CoreError::new("NOT_TGS", "Không phải sticker động TGS."));
+                if s.document.mime_type() != Some(mime) {
+                    return Err(CoreError::new("NOT_ANIMATED", "Không phải sticker động / video."));
                 }
                 let loc = crate::media::document_loc(&s.document).ok_or_else(|| CoreError::new("NO_MEDIA", "Sticker không tải được."))?;
                 self.download(&loc, &path).await?;
-                // TGS = gzip: nhận nhầm tệp khác thì xoá (khỏi đệm sai)
-                let head = std::fs::read(&path).map(|d| d.get(..2) == Some(&[0x1f, 0x8b][..])).unwrap_or(false);
-                if !head {
+                // TGS = gzip, WebM = EBML: nhận nhầm tệp khác thì xoá (khỏi đệm sai)
+                let (data, rerr) = match std::fs::read(&path) {
+                    Ok(d) => (d, String::new()),
+                    Err(e) => (Vec::new(), format!(", đọc lỗi: {e}")),
+                };
+                if data.get(..magic.len()) != Some(magic) {
                     let _ = std::fs::remove_file(&path);
-                    return Err(CoreError::new("DECODE", "Tệp sticker động hỏng."));
+                    let head: Vec<String> = data.iter().take(8).map(|b| format!("{b:02x}")).collect();
+                    return Err(CoreError::new("DECODE", format!("Tệp sticker động hỏng ({} / {:?} byte, đầu {}{rerr}).",
+                                                                data.len(), loc.size, head.join(" "))));
                 }
                 Ok(json!({"path": path}))
             }
@@ -1580,7 +1617,7 @@ impl Core {
                     .await
                     .map_err(|e| CoreError::new("DECODE", e.to_string()))?
                     .map_err(|e| CoreError::new("DECODE", format!("Không giải mã được tin thoại: {e}")))?;
-                let tmp = path.with_extension("part");
+                let tmp = part_path(&path);
                 std::fs::write(&tmp, wav).and_then(|_| std::fs::rename(&tmp, &path)).map_err(|e| CoreError::new("IO", e.to_string()))?;
                 Ok(json!({"path": path, "duration": dur}))
             }
@@ -1895,6 +1932,24 @@ impl Core {
                 Ok(self.adopt_docs(s.documents))
             }
             "http.get" | "http.download" => Box::pin(self.http(method, a)).await,
+            "chat.ttl" => {
+                // Tin tự xoá: `period` giây (0 = tắt; app dùng 1 ngày / 1 tuần / 1 tháng) — áp cho tin gửi từ giờ, cả hai bên
+                use grammers_client::tl::functions;
+                let pr = self.peer_ref(a).await?;
+                let period = a.get("period").and_then(Value::as_i64).unwrap_or(0).max(0) as i32;
+                self.client.invoke(&functions::messages::SetHistoryTtl { peer: pr.into(), period }).await?;
+                Ok(json!({"ttl": period}))
+            }
+            "account.defaultTtl" => {
+                // Mặc định cho chat mới: có `period` thì đặt, không thì đọc
+                use grammers_client::tl::{enums, functions};
+                if let Some(period) = a.get("period").and_then(Value::as_i64) {
+                    self.client.invoke(&functions::messages::SetDefaultHistoryTtl { period: period.max(0) as i32 }).await?;
+                    return Ok(json!({"ttl": period.max(0)}));
+                }
+                let enums::DefaultHistoryTtl::Ttl(t) = self.client.invoke(&functions::messages::GetDefaultHistoryTtl {}).await?;
+                Ok(json!({"ttl": t.period}))
+            }
             "folders.list" | "folders.suggested" | "folders.save" | "folders.delete" | "folders.order" => {
                 Box::pin(self.folders(method, a)).await
             }
@@ -1939,6 +1994,27 @@ impl Core {
             "dialogs.delete" => {
                 // Chat riêng: xoá lịch sử phía mình; nhóm thường: rời nhóm; kênh / siêu nhóm: rời
                 let pr = self.peer_ref(a).await?;
+                // Chat riêng + revoke: xoá lịch sử cho cả hai bên (messages.deleteHistory lặp tới khi hết)
+                if a.get("revoke").and_then(Value::as_bool).unwrap_or(false) && pr.id.kind() == grammers_session::types::PeerKind::User {
+                    use grammers_client::tl::{enums, functions};
+                    for _ in 0..50 {
+                        let enums::messages::AffectedHistory::History(r) = self
+                            .client
+                            .invoke(&functions::messages::DeleteHistory {
+                                just_clear: false,
+                                revoke: true,
+                                peer: pr.into(),
+                                max_id: 0,
+                                min_date: None,
+                                max_date: None,
+                            })
+                            .await?;
+                        if r.offset <= 0 {
+                            break;
+                        }
+                    }
+                    return Ok(json!({}));
+                }
                 self.client.delete_dialog(pr).await?;
                 Ok(json!({}))
             }
@@ -2251,6 +2327,13 @@ fn peer_name(p: &Peer) -> String {
         }
         _ => p.name().unwrap_or("").to_string(),
     }
+}
+
+/// Tệp tạm riêng cho mỗi lần tải / ghi (`<tên>.<số>.part`): hai lệnh cùng tải một tệp (ô chat vẽ lại khi tin vừa gửi xong…)
+/// không ghi chồng lên nhau — trước đây cùng tên `.part` → tệp hỏng (sticker video báo DECODE) và lệnh sau đổi tên lỗi IO.
+fn part_path(path: &std::path::Path) -> std::path::PathBuf {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    path.with_extension(format!("{}.part", N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)))
 }
 
 fn peer_kind(p: &Peer) -> &'static str {

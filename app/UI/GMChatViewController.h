@@ -30,6 +30,10 @@
 - (void)debugPlayVoiceFromBottom:(NSInteger)k;
 - (void)debugOpenDocFromBottom:(NSInteger)k;
 - (void)debugSaveFromBottom:(NSInteger)k;
+/// Công cụ thử: xoá tin thứ k từ dưới lên — revoke NO = chỉ ở máy tôi.
+- (void)debugDeleteFromBottom:(NSInteger)k revoke:(BOOL)revoke;
+/// Công cụ thử: xoá tin hệ thống thứ k từ dưới lên (vd «… đã tắt tự xoá tin» do lệnh thử tạo).
+- (void)debugDeleteServiceFromBottom:(NSInteger)k;
 /// Gửi ảnh (JPEG) / tin thoại (WAV) từ tệp có sẵn.
 - (void)sendPhotoFile:(NSString *)path;
 - (void)sendVoiceFile:(NSString *)path;

@@ -1688,19 +1688,44 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     [self setCompose:GMComposeEdit target:_menuMsg];
 }
 
+/// Xoá tin: chat riêng → «cho cả hai bên» (tin của mình lẫn của bên kia, như app gốc) hoặc «chỉ ở máy tôi»; nhóm thường → tin
+/// của mình xoá được cho mọi người, tin người khác chỉ xoá ở máy mình; kênh / siêu nhóm (-100…) → luôn xoá cho mọi người.
 - (void)gmDelete:(id)sender {
     NSDictionary *m = _menuMsg;
-    BOOL both = [self.kind isEqual:@"user"] && ![self isSaved];
-    UIActionSheet *s = [[UIActionSheet alloc] initWithTitle:nil delegate:self cancelButtonTitle:@"Huỷ"
-                                     destructiveButtonTitle:both ? @"Xoá cho cả hai bên" : @"Xoá tin nhắn"
+    NSMutableArray *revoke = [NSMutableArray array];  // mỗi nút: @YES xoá cho mọi người / @NO chỉ ở máy tôi
+    UIActionSheet *s = [[UIActionSheet alloc] initWithTitle:nil delegate:self cancelButtonTitle:nil destructiveButtonTitle:nil
                                           otherButtonTitles:nil];
+    if ([self isSaved]) {
+        s.destructiveButtonIndex = [s addButtonWithTitle:@"Xoá tin nhắn"];
+        [revoke addObject:@YES];
+    } else if ([self.peer hasPrefix:@"-100"]) {
+        s.destructiveButtonIndex = [s addButtonWithTitle:[self.kind isEqual:@"channel"] ? @"Xoá tin nhắn" : @"Xoá cho mọi người"];
+        [revoke addObject:@YES];
+    } else if ([self.kind isEqual:@"user"]) {
+        s.title = @"Xoá tin nhắn này?";
+        s.destructiveButtonIndex = [s addButtonWithTitle:@"Xoá cho cả hai bên"];
+        [revoke addObject:@YES];
+        [s addButtonWithTitle:@"Xoá chỉ ở máy tôi"];
+        [revoke addObject:@NO];
+    } else {
+        if ([self outgoing:m]) {
+            s.destructiveButtonIndex = [s addButtonWithTitle:@"Xoá cho mọi người"];
+            [revoke addObject:@YES];
+        }
+        [s addButtonWithTitle:@"Xoá chỉ ở máy tôi"];
+        [revoke addObject:@NO];
+    }
+    if (s.destructiveButtonIndex < 0 && revoke.count == 1) s.destructiveButtonIndex = 0;
+    s.cancelButtonIndex = [s addButtonWithTitle:@"Huỷ"];
     objc_setAssociatedObject(s, "delete", m, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(s, "revoke", revoke, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [s showInView:self.view];
 }
 
-- (void)deleteMessage:(NSDictionary *)m {
+- (void)deleteMessage:(NSDictionary *)m revoke:(BOOL)revoke {
     NSNumber *mid = GMVal(m, @"id");
-    [GMCore call:@"messages.delete" args:@{@"peer": self.peer, @"ids": @[mid]} done:^(id ok, NSDictionary *err) {
+    [GMCore call:@"messages.delete" args:@{@"peer": self.peer, @"ids": @[mid], @"revoke": @(revoke)}
+            done:^(id ok, NSDictionary *err) {
         if (err) {
             [[[UIAlertView alloc] initWithTitle:@"Không xoá được" message:GMErrorText(err) delegate:nil cancelButtonTitle:@"OK"
                               otherButtonTitles:nil] show];
@@ -1838,7 +1863,8 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     }
     NSDictionary *del = objc_getAssociatedObject(sheet, "delete");
     if (del) {
-        if (i == sheet.destructiveButtonIndex) [self deleteMessage:del];
+        NSArray *revoke = objc_getAssociatedObject(sheet, "revoke");
+        if (i >= 0 && i < (NSInteger)revoke.count) [self deleteMessage:del revoke:[[revoke objectAtIndex:i] boolValue]];
         return;
     }
     NSArray *web = objc_getAssociatedObject(sheet, "links");
@@ -1865,6 +1891,21 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     if (r == NSNotFound) return;
     _menuMsg = [[_rows objectAtIndex:r] objectForKey:@"msg"];
     [self gmCopy:nil];
+}
+
+- (void)debugDeleteServiceFromBottom:(NSInteger)k {
+    NSInteger seen = -1;
+    for (NSInteger r = _rows.count - 1; r >= 0; r--) {
+        if ([[[_rows objectAtIndex:r] objectForKey:@"type"] isEqual:@"service"] && ++seen == k) {
+            [self deleteMessage:[[_rows objectAtIndex:r] objectForKey:@"msg"] revoke:YES];
+            return;
+        }
+    }
+}
+
+- (void)debugDeleteFromBottom:(NSInteger)k revoke:(BOOL)revoke {
+    NSInteger r = [self rowFromBottom:k];
+    if (r != NSNotFound) [self deleteMessage:[[_rows objectAtIndex:r] objectForKey:@"msg"] revoke:revoke];
 }
 
 - (void)debugMenuFromBottom:(NSInteger)k {
@@ -2019,7 +2060,11 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     NSString *type = [r objectForKey:@"type"];
     CGFloat W = tableView.bounds.size.width;
     if (![type isEqual:@"msg"]) {
+        // Ô dùng lại từ tin sticker: ẩn cả ảnh sticker, giờ của nó và hoạt hình (không thì «giờ» cũ còn nổi trên dòng ngày / tin hệ thống)
         c.bubble.hidden = YES;
+        c.sticker.hidden = c.stickerTime.hidden = YES;
+        [c.lottie stop];
+        c.lottie.hidden = YES;
         c.pill.hidden = NO;
         UIFont *f = c.pill.font;
         NSString *text = [type isEqual:@"day"] ? [GMTheme dayTitle:[r objectForKey:@"date"]] : GMVal([r objectForKey:@"msg"], @"text");
@@ -2208,11 +2253,12 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     return c;
 }
 
-/// Sticker động TGS (mime application/x-tgsticker): tải tệp (lõi media.stickerfile, đệm ở media/) rồi phát bằng GMLottieView đè
-/// lên ảnh tĩnh; khung đầu hiện thì ẩn ảnh tĩnh. Sticker khác: dừng.
+/// Sticker động TGS (mime application/x-tgsticker) và sticker video (video/webm): tải tệp (lõi media.stickerfile, đệm ở
+/// media/) rồi phát bằng GMLottieView đè lên ảnh tĩnh; khung đầu hiện thì ẩn ảnh tĩnh. Sticker khác: dừng.
 - (void)playTgs:(NSDictionary *)stk msg:(NSDictionary *)m cell:(GMBubbleCell *)c key:(NSString *)skey {
     BOOL tgs = [GMVal(stk, @"mime") isEqual:@"application/x-tgsticker"];
-    if (!tgs) {
+    BOOL webm = [GMVal(stk, @"mime") isEqual:@"video/webm"];
+    if (!tgs && !webm) {
         [c.lottie stop];
         c.lottie.hidden = YES;
         return;
@@ -2234,7 +2280,8 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         return;
     }
     [c.lottie stop];
-    [GMCore call:@"media.stickerfile" args:@{@"peer": self.peer, @"id": GMVal(m, @"id")} done:^(id ok, NSDictionary *err) {
+    [GMCore call:@"media.stickerfile" args:@{@"peer": self.peer, @"id": GMVal(m, @"id"), @"kind": webm ? @"webm" : @"tgs"}
+            done:^(id ok, NSDictionary *err) {
         NSString *p = GMVal(ok, @"path");
         if (!p) {
             GMLog(@"sticker động: không tải được (%@)", GMErrorText(err));
