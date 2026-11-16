@@ -1,0 +1,11 @@
+[package]
+name = "gm-lottie"
+description = "GramMini: vẽ sticker động Telegram (TGS = Lottie nén gzip) bằng tiny-skia — Rust thuần, chạy được trên armv7 iOS 5 / 6"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json = "1"
+flate2 = "1"
+tiny-skia = { version = "0.11", default-features = false, features = ["std"] }

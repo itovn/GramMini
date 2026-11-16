@@ -245,3 +245,10 @@
   itovn/GramMini: https://itovn.github.io/GramMini/ (nguồn Cydia …/cydia/).
 - App: Cài đặt → «Nhóm Telegram GramMini» (t.me/tivikit, mở ngay trong app), chú thích mã nguồn mở; chạm «Phiên bản» = kiểm bản mới.
 
+### Bản 1.1.0 — sticker động TGS (16/11/2026 — anh giao: tự kiểm, tự phát hành, thử trên iPhone 5)
+
+- Crate `gm-lottie` (D26) + `GMLottieView`: sticker động trong chat chạy thật (thay ảnh tĩnh). iPhone 5: gửi «Hot Cherry» vào Tin
+  nhắn đã lưu → chạy mượt, 15,4 ms / khung 256 px, 5 lượt rồi dừng. Hai lỗi gặp khi thử đã sửa: thiếu `__sincosf_stret` trên
+  iOS 6 (crash), tệp TGS bị ghi đè bởi ảnh tĩnh (trùng tệp tạm).
+- Sticker video (WebM) chưa chạy (hiện ảnh tĩnh) — iOS 5 / 6 không giải mã VP9.
+

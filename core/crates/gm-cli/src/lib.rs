@@ -85,6 +85,51 @@ pub fn run(args: Vec<String>) -> i32 {
         if cmd == "svc" {
             return svc(&rest).await;
         }
+        if cmd == "lottie" {
+            // lottie <tệp .tgs / .json> <thư mục ra> [cỡ px] [số khung] — vẽ thử sticker động ra PNG (+ bảng tổng hợp sheet.png)
+            let [src, dir, more @ ..] = rest.as_slice() else { return Err("lottie <tệp> <thư mục> [cỡ] [số khung]".into()) };
+            let size: u32 = more.first().and_then(|s| s.parse().ok()).unwrap_or(256);
+            let want: u32 = more.get(1).and_then(|s| s.parse().ok()).unwrap_or(8);
+            let data = std::fs::read(src).map_err(|e| e.to_string())?;
+            let t = Instant::now();
+            let a = gm_lottie::Animation::parse(&data)?;
+            let parse_ms = t.elapsed().as_millis();
+            let frames = a.frames();
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            let n = want.min(frames).max(1);
+            let cols = n.min(4);
+            let rows = n.div_ceil(cols);
+            let mut sheet = vec![255u8; (cols * size * rows * size * 4) as usize];
+            let mut buf = vec![0u8; (size * size * 4) as usize];
+            let t = Instant::now();
+            for k in 0..n {
+                let f = (k * frames / n) as f32;
+                a.render(f, &mut buf, size, size);
+                let (cx, cy) = ((k % cols) * size, (k / cols) * size);
+                for y in 0..size {
+                    for x in 0..size {
+                        let s = ((y * size + x) * 4) as usize;
+                        let d = (((cy + y) * cols * size + cx + x) * 4) as usize;
+                        // Trộn lên nền trắng (bộ đệm đã nhân alpha)
+                        let al = buf[s + 3] as u32;
+                        for c in 0..3 {
+                            sheet[d + c] = (buf[s + c] as u32 + (255 - al) * 255 / 255).min(255) as u8;
+                        }
+                        sheet[d + 3] = 255;
+                    }
+                }
+            }
+            let ms = t.elapsed().as_millis();
+            let file = std::fs::File::create(format!("{dir}/sheet.png")).map_err(|e| e.to_string())?;
+            let mut enc = png::Encoder::new(std::io::BufWriter::new(file), cols * size, rows * size);
+            enc.set_color(png::ColorType::Rgba);
+            enc.set_depth(png::BitDepth::Eight);
+            enc.write_header().map_err(|e| e.to_string())?.write_image_data(&sheet).map_err(|e| e.to_string())?;
+            let (w, h) = a.size();
+            println!("{src}: {w}x{h}, {} fps, {frames} khung; đọc {parse_ms} ms; vẽ {n} khung {size}px: {ms} ms ({:.1} ms/khung)",
+                     a.frame_rate(), ms as f64 / n as f64);
+            return Ok(());
+        }
         if cmd == "voice" {
             // voice decode <ogg> <wav> | voice encode <wav> <ogg>
             let [op, src, dst] = rest.as_slice() else { return Err("voice decode|encode <vào> <ra>".into()) };

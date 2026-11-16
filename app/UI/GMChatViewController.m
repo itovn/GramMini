@@ -10,6 +10,7 @@
 #import "GMStickerPanel.h"
 #import "GMStickerSetViewController.h"
 #import "GMMediaSaver.h"
+#import "GMLottieView.h"
 #import <MediaPlayer/MediaPlayer.h>
 #import <QuickLook/QuickLook.h>
 #import <AVFoundation/AVFoundation.h>
@@ -89,6 +90,8 @@ static const CGFloat kTimeW0 = 6;  // khoảng trống trước giờ
 @property (nonatomic, strong) UILabel *voiceTime;
 @property (nonatomic, copy) void (^onPlay)(void);
 @property (nonatomic, strong) UIImageView *sticker;
+/// Sticker động TGS: phát đè lên ảnh tĩnh (ảnh tĩnh ẩn khi khung đầu đã hiện).
+@property (nonatomic, strong) GMLottieView *lottie;
 @property (nonatomic, strong) UILabel *stickerTime;
 @property (nonatomic, strong) NSDictionary *voiceMsg;
 @property (nonatomic, strong) NSDictionary *docMsg;
@@ -142,6 +145,8 @@ static const CGFloat kTimeW0 = 6;  // khoảng trống trước giờ
 - (void)prepareForReuse {
     [super prepareForReuse];
     [self stopGif];
+    [self.lottie stop];
+    self.lottie.hidden = YES;
 }
 
 - (void)dealloc {
@@ -222,6 +227,9 @@ static const CGFloat kTimeW0 = 6;  // khoảng trống trước giờ
         _sticker = [[UIImageView alloc] init];
         _sticker.contentMode = UIViewContentModeScaleAspectFit;
         [self.contentView addSubview:_sticker];
+        _lottie = [[GMLottieView alloc] init];
+        _lottie.hidden = YES;
+        [self.contentView addSubview:_lottie];
         _stickerTime = [self label:[UIFont systemFontOfSize:11] in:self.contentView];
         _stickerTime.textColor = [UIColor whiteColor];
         _stickerTime.textAlignment = GMAlignCenter;
@@ -288,6 +296,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     GMCompose _compose;
     NSDictionary *_target;   // tin đang trả lời / sửa
     NSDictionary *_menuMsg;  // tin vừa nhấn giữ
+    NSMutableDictionary *_tgsPaths;  // sticker động: khoá ô → tệp .tgs đã tải
 }
 
 #pragma mark Dựng
@@ -2040,6 +2049,7 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
                                     if ([wc.photoKey isEqual:skey]) wc.sticker.image = img;
                                 }];
         }
+        [self playTgs:stk msg:m cell:c key:skey];
         NSString *st = [self timeText:m];
         CGFloat stw = [st sizeWithFont:c.stickerTime.font].width + 10;
         c.stickerTime.text = st;
@@ -2196,6 +2206,43 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         c.photoTime.frame = CGRectMake(CGRectGetMaxX(c.photo.frame) - tw - 14, CGRectGetMaxY(c.photo.frame) - 22, tw + 10, 17);
     }
     return c;
+}
+
+/// Sticker động TGS (mime application/x-tgsticker): tải tệp (lõi media.stickerfile, đệm ở media/) rồi phát bằng GMLottieView đè
+/// lên ảnh tĩnh; khung đầu hiện thì ẩn ảnh tĩnh. Sticker khác: dừng.
+- (void)playTgs:(NSDictionary *)stk msg:(NSDictionary *)m cell:(GMBubbleCell *)c key:(NSString *)skey {
+    BOOL tgs = [GMVal(stk, @"mime") isEqual:@"application/x-tgsticker"];
+    if (!tgs) {
+        [c.lottie stop];
+        c.lottie.hidden = YES;
+        return;
+    }
+    if (!_tgsPaths) _tgsPaths = [NSMutableDictionary dictionary];
+    c.lottie.frame = c.sticker.frame;
+    c.lottie.hidden = NO;
+    __weak GMBubbleCell *wc = c;
+    void (^play)(NSString *) = ^(NSString *path) {
+        if (![wc.photoKey isEqual:skey]) return;
+        wc.lottie.firstFrame = ^{
+            if ([wc.photoKey isEqual:skey]) wc.sticker.hidden = YES;
+        };
+        [wc.lottie playFile:path];
+    };
+    NSString *path = [_tgsPaths objectForKey:skey];
+    if (path) {
+        play(path);
+        return;
+    }
+    [c.lottie stop];
+    [GMCore call:@"media.stickerfile" args:@{@"peer": self.peer, @"id": GMVal(m, @"id")} done:^(id ok, NSDictionary *err) {
+        NSString *p = GMVal(ok, @"path");
+        if (!p) {
+            GMLog(@"sticker động: không tải được (%@)", GMErrorText(err));
+            return;
+        }
+        [_tgsPaths setObject:p forKey:skey];
+        play(p);
+    }];
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {

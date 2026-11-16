@@ -10,6 +10,8 @@ build = "build.rs"
 gm-net = { path = "../gm-net" }
 gm-core = { path = "../gm-core" }
 gm-opus = { path = "../gm-opus" }
+gm-lottie = { path = "../gm-lottie" }
+png = "0.18"
 grammers-client.workspace = true
 grammers-mtsender.workspace = true
 grammers-session.workspace = true

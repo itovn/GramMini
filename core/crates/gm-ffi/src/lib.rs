@@ -111,3 +111,56 @@ pub extern "C" fn gm_call(request_json: *const c_char, on_result: Callback, ctx:
         cb.send(&out);
     });
 }
+
+// ───── Sticker động (TGS): vẽ đồng bộ từng khung, gọi từ luồng nào cũng được (hoạt hình đã đọc thì bất biến) ─────
+
+/// Mở tệp TGS / Lottie → con trỏ hoạt hình (NULL nếu không đọc được). Đóng bằng `gm_lottie_close`.
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_lottie_open(path: *const c_char) -> *mut c_void {
+    match std::fs::read(cstr(path)).ok().and_then(|d| gm_lottie::Animation::parse(&d).ok()) {
+        Some(a) => Box::into_raw(Box::new(a)) as *mut c_void,
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// Thông tin: số khung / giây, số khung, kích thước gốc. Trả 0 nếu được.
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_lottie_info(anim: *const c_void, fps: *mut f64, frames: *mut c_int, w: *mut c_int, h: *mut c_int) -> c_int {
+    let Some(a) = (unsafe { (anim as *const gm_lottie::Animation).as_ref() }) else { return 1 };
+    let (aw, ah) = a.size();
+    unsafe {
+        if !fps.is_null() {
+            *fps = a.frame_rate() as f64;
+        }
+        if !frames.is_null() {
+            *frames = a.frames() as c_int;
+        }
+        if !w.is_null() {
+            *w = aw as c_int;
+        }
+        if !h.is_null() {
+            *h = ah as c_int;
+        }
+    }
+    0
+}
+
+/// Vẽ khung `frame` (0 … số khung − 1) vào `buf` RGBA đã nhân alpha, `width × height × 4` byte (hàng liền nhau). Trả 0 nếu được.
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_lottie_render(anim: *const c_void, frame: c_int, buf: *mut u8, width: c_int, height: c_int) -> c_int {
+    let Some(a) = (unsafe { (anim as *const gm_lottie::Animation).as_ref() }) else { return 1 };
+    if buf.is_null() || width <= 0 || height <= 0 || width > 2048 || height > 2048 {
+        return 2;
+    }
+    let len = width as usize * height as usize * 4;
+    let slice = unsafe { std::slice::from_raw_parts_mut(buf, len) };
+    if a.render(frame.max(0) as f32, slice, width as u32, height as u32) { 0 } else { 3 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_lottie_close(anim: *mut c_void) {
+    if !anim.is_null() {
+        drop(unsafe { Box::from_raw(anim as *mut gm_lottie::Animation) });
+    }
+}
+

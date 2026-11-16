@@ -269,3 +269,20 @@ Thiết kế đầy đủ: [THIET-KE.md](THIET-KE.md).
 - Lưu ảnh / video: `UIImageWriteToSavedPhotosAlbum` / `UISaveVideoAtPathToSavedPhotosAlbum` (bản gốc lớn nhất; video kiểm tra
   `UIVideoAtPathIsCompatibleWithSavedPhotosAlbum`); bị từ chối quyền Ảnh (-3310 / -3311) thì chỉ đường bật trong Cài đặt.
 
+## D26. Sticker động TGS — bộ vẽ Lottie viết bằng Rust (gm-lottie) — 16/11/2026 (bản 1.1)
+
+- TGS = Lottie (JSON) nén gzip. Không dùng rlottie (C++ — thêm libc++ / bộ dựng C++ cho iOS 5 / 6, nhiều rủi ro ký hiệu): tự viết
+  crate `gm-lottie` (serde_json + tiny-skia + flate2, Rust thuần) phủ phần Lottie mà sticker Telegram được dùng (lớp hình / rỗng
+  / lồng / màu, cha — con, nhóm, đường cong biến hình, chữ nhật, elip, tô màu, viền + nét đứt, dải màu thẳng / tròn, cắt nét,
+  khung chính có làm mượt / giữ, đường đi cong của vị trí). Không có mask / matte / merge (sticker Telegram không được dùng).
+  Kiểm bằng `gm-cli lottie <tệp> <thư mục>` trên 7 tệp TGS mẫu (repo Telegram-iOS) — hình đúng.
+- Bản phát hành dựng `panic = abort` → bộ vẽ không panic: đọc JSON bằng `get`, lọc NaN, gặp lạ thì bỏ qua.
+- App: `gm_lottie_open / info / render / close` (FFI đồng bộ) gọi trên một hàng đợi nền nối tiếp dùng chung (đóng hoạt hình cũng
+  xếp vào đó → không đóng lúc đang vẽ); `GMLottieView` đặt ảnh khung vào layer.contents, ≤ 30 khung / giây, cỡ ≤ 256 px, đồng
+  hồ ở chế độ mặc định của run loop (dừng lúc cuộn), chạy 5 lượt rồi dừng ở khung cuối (hiện lại thì chạy tiếp). iPhone 5:
+  256 × 256 mất ~15 ms / khung.
+- Lõi `media.stickerfile` tải nguyên tệp TGS → `media/s<peer>_<id>_a.tgs`, kiểm gzip. Lỗi gặp khi thử: tên `s<peer>_<id>.tgs`
+  trùng tệp tạm `.part` với ảnh tĩnh của cùng tin (`media.sticker` tải song song) → tệp TGS bị ghi đè bằng WebP → đổi tên.
+- LLVM gộp sin + cos (tiny-skia xoay hình) thành `__sincosf_stret` — iOS 7+, iOS 5 / 6 không có → dyld dừng app ở lần vẽ đầu.
+  Vá trong `app/Core/GMShims.c` như `__exp10` (kiểu trả về riêng cùng bố cục — SDK 9.3 không khai báo cho armv7).
+

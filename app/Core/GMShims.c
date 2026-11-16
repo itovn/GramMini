@@ -81,6 +81,28 @@ float __exp10f(float x) {
     return powf(10.0f, x);
 }
 
+// iOS 7+: LLVM gộp sin + cos cùng đối số trong mã Rust thành __sincosf_stret / __sincos_stret (tiny-skia xoay hình khi vẽ
+// sticker động TGS) — iOS 5 / 6 không có: dyld dừng app ở lần gọi đầu (16/11/2026, iPhone 5). Tệp này dựng với đích iOS 6 nên
+// LLVM không gộp ngược sinf / cosf ở đây.
+// (SDK 9.3 không khai báo struct __float2 / __double2 cho armv7 → kiểu riêng cùng bố cục; trả về qua con trỏ như ABI APCS
+// LLVM dùng khi gọi.)
+typedef struct {
+    float sinval, cosval;
+} gm_float2;
+typedef struct {
+    double sinval, cosval;
+} gm_double2;
+
+gm_float2 __sincosf_stret(float x) {
+    gm_float2 r = {sinf(x), cosf(x)};
+    return r;
+}
+
+gm_double2 __sincos_stret(double x) {
+    gm_double2 r = {sin(x), cos(x)};
+    return r;
+}
+
 // iOS 11+: std::fs::copy của Rust thử nhân bản tệp (APFS) trước — báo «không hỗ trợ» thì nó tự chép kiểu thường.
 int fclonefileat(int srcfd, int dst_dirfd, const char *dst, uint32_t flags) {
     (void)srcfd;

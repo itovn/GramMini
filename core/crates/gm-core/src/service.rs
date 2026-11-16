@@ -1460,6 +1460,33 @@ impl Core {
                 crate::media::to_png(&data, &path).map_err(|e| CoreError::new("DECODE", format!("Không đọc được sticker: {e}")))?;
                 Ok(json!({"path": path}))
             }
+            "media.stickerfile" => {
+                // Sticker động TGS (Lottie nén gzip): tải nguyên tệp → media/s<peer>_<id>.tgs (app vẽ bằng gm_lottie_*)
+                let peer = self.peer_ref(a).await?;
+                let id = a.get("id").and_then(Value::as_i64).ok_or_else(|| CoreError::new("BAD_ARGS", "thiếu «id»"))?;
+                // Tên riêng «…_a.tgs»: tệp tạm «.part» không trùng với ảnh tĩnh của cùng tin (media.sticker tải song song)
+                let path = self.cfg.data_dir.join("media").join(format!("s{}_{}_a.tgs", arg_str(a, "peer")?, id));
+                if self.cache.hit(&path) {
+                    return Ok(json!({"path": path}));
+                }
+                let _permit = self.dl.acquire().await.map_err(|_| CoreError::new("BUSY", "hàng tải đã đóng"))?;
+                let msg = self.client.get_messages_by_id(peer, &[id as i32]).await?.into_iter().flatten().next();
+                let Some(Media::Sticker(s)) = msg.as_ref().and_then(|m| m.media()) else {
+                    return Err(CoreError::new("NO_MEDIA", "Tin này không còn sticker."));
+                };
+                if s.document.mime_type() != Some("application/x-tgsticker") {
+                    return Err(CoreError::new("NOT_TGS", "Không phải sticker động TGS."));
+                }
+                let loc = crate::media::document_loc(&s.document).ok_or_else(|| CoreError::new("NO_MEDIA", "Sticker không tải được."))?;
+                self.download(&loc, &path).await?;
+                // TGS = gzip: nhận nhầm tệp khác thì xoá (khỏi đệm sai)
+                let head = std::fs::read(&path).map(|d| d.get(..2) == Some(&[0x1f, 0x8b][..])).unwrap_or(false);
+                if !head {
+                    let _ = std::fs::remove_file(&path);
+                    return Err(CoreError::new("DECODE", "Tệp sticker động hỏng."));
+                }
+                Ok(json!({"path": path}))
+            }
             "media.document" => {
                 let peer = self.peer_ref(a).await?;
                 let id = a.get("id").and_then(Value::as_i64).ok_or_else(|| CoreError::new("BAD_ARGS", "thiếu «id»"))?;
