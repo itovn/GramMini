@@ -239,9 +239,9 @@
 - Bản 1.0.0 (`tools/build-release.sh`, không có Debug/): 410 ký hiệu, thiếu 0 trên iOS 5 và iOS 6; cài thử iPad 1 — chạy.
 - Repo công khai **itovn/GramMini**: ảnh chụp mã sạch (không lịch sử, bỏ `Tai_Lieu/`, đã bỏ tên chat / danh bạ riêng khỏi
   tài liệu), LICENSE GPL-3.0, README; Release v1.0.0 kèm .deb (GitHub ghi digest SHA-256).
-- Trang giới thiệu + nguồn Cydia (`E:\DEV_CODE\GramMini.github.io`, `tools/update-cydia-repo.sh`): kiểu iOS 6 (thanh trên bóng,
+- Trang giới thiệu + nguồn Cydia (`E:\DEV_CODE\GramMini-site`, `tools/update-cydia-repo.sh`): kiểu iOS 6 (thanh trên bóng,
   nền sọc, bảng nhóm, nút bóng), ảnh minh hoạ vẽ lại từ bản mẫu (dữ liệu mẫu — ảnh chụp thật có tên chat của anh / nút
-  AssistiveTouch); thử trên Safari iPhone 5 (iOS 6) và iPad 1 (iOS 5) — hiện đúng. Chờ tổ chức GitHub **GramMini** để đẩy lên
-  GramMini.github.io.
+  AssistiveTouch); thử trên Safari iPhone 5 (iOS 6) và iPad 1 (iOS 5) — hiện đúng. Anh chọn đặt trang ở nhánh gh-pages của
+  itovn/GramMini: https://itovn.github.io/GramMini/ (nguồn Cydia …/cydia/).
 - App: Cài đặt → «Nhóm Telegram GramMini» (t.me/tivikit, mở ngay trong app), chú thích mã nguồn mở; chạm «Phiên bản» = kiểm bản mới.
 

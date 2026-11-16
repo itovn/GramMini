@@ -7,7 +7,7 @@ hiệu ứng kính trong, lõi **Rust** nói chuyện thẳng với máy chủ T
 
 > GramMini dùng Telegram API nhưng **không phải** sản phẩm của Telegram.
 
-**Nhóm Telegram:** [t.me/tivikit](https://t.me/tivikit) — hỏi đáp, báo lỗi, bản mới.
+**Trang giới thiệu:** https://itovn.github.io/GramMini/ · **Nhóm Telegram:** [t.me/tivikit](https://t.me/tivikit) — hỏi đáp, báo lỗi, bản mới.
 
 ## Máy chạy được
 
@@ -27,7 +27,7 @@ iOS 5.0 – 6.1.x, đã jailbreak (cần MobileSubstrate): iPhone 4 / 4S / 5, iP
 
 ## Cài đặt
 
-- **Cydia:** thêm nguồn `https://GramMini.github.io/cydia/` rồi cài **GramMini**. Cài xong Cydia xin khởi động lại SpringBoard
+- **Cydia:** thêm nguồn `https://itovn.github.io/GramMini/cydia/` rồi cài **GramMini**. Cài xong Cydia xin khởi động lại SpringBoard
   (tweak GMNotify cho thông báo).
 - **Tay:** tải `vn.grammini.app_<bản>_iphoneos-arm.deb` ở [Releases](https://github.com/itovn/GramMini/releases), chép vào máy,
   `dpkg -i` rồi khởi động lại SpringBoard.

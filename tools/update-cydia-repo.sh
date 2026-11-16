@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Tạo / cập nhật nguồn Cydia (APT phẳng) trong thư mục cydia/ của trang giới thiệu (repo GramMini/GramMini.github.io):
-#   bash tools/update-cydia-repo.sh <đường dẫn tới …/GramMini.github.io/cydia> <tệp .deb mới>…
+# Tạo / cập nhật nguồn Cydia (APT phẳng) trong thư mục cydia/ của trang giới thiệu (nhánh gh-pages của itovn/GramMini):
+#   bash tools/update-cydia-repo.sh <thư mục trang>/cydia <tệp .deb mới>…
 # Chép .deb vào cydia/debs (giữ 3 bản mới nhất), tạo Packages(.gz/.bz2) bằng dpkg-scanpackages (thêm Depiction / Homepage nếu
 # gói chưa có) và Release (MD5 + SHA256).
-# Nguồn trong Cydia: https://GramMini.github.io/cydia/  (dòng APT: deb https://GramMini.github.io/cydia/ ./)
+# Nguồn trong Cydia: https://itovn.github.io/GramMini/cydia/  (dòng APT: deb https://itovn.github.io/GramMini/cydia/ ./)
 # Cần dpkg-dev (dpkg-scanpackages), gzip, bzip2 — chạy trên máy Linux dựng.
 set -euo pipefail
 REPO="${1:?thư mục cydia/}"
 shift
-SITE="https://GramMini.github.io"
+SITE="https://itovn.github.io/GramMini"
 mkdir -p "$REPO/debs"
 for d in "$@"; do
     cp "$d" "$REPO/debs/"
@@ -32,7 +32,7 @@ Version: 1.0
 Codename: ios6
 Architectures: iphoneos-arm
 Components: main
-Description: GramMini — Telegram cho iPhone / iPad iOS 5 / iOS 6 đã jailbreak — https://GramMini.github.io
+Description: GramMini — Telegram cho iPhone / iPad iOS 5 / iOS 6 đã jailbreak — https://itovn.github.io/GramMini/
 EOF
     echo "MD5Sum:"
     for f in Packages Packages.gz Packages.bz2; do echo " $(md5sum "$f" | cut -d' ' -f1) $(stat -c %s "$f") $f"; done
