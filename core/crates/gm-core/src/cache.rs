@@ -61,7 +61,7 @@ pub struct Entry {
 fn classify(dir: &str, name: &str) -> (&'static str, Option<String>, bool) {
     match dir {
         "avatars" => ("avatar", name.split_once('_').map(|(p, _)| p.to_string()), name.ends_with(".part")),
-        // Ô bản đồ OpenStreetMap (map.tile)
+        // Ảnh bản đồ (map.static — Telegram vẽ; ô OpenStreetMap cũ trước 1.4.3 tự hết hạn)
         "maps" => ("other", None, name.ends_with(".tmp")),
         "media" => {
             let peer = name.get(1..).and_then(|r| r.split_once('_')).map(|(p, _)| p.to_string());

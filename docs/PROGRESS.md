@@ -343,7 +343,7 @@ Anh báo chat với bot không bật được menu như Telegram mới, rồi nh
 
 #### Việc tiếp theo
 
-1. Thử trọn luồng OTA với `gmupdate` mới (máy thử chạy bản số thấp hơn → cập nhật lên bản có `.sig`) khi có máy rảnh.
+1. ~~Thử trọn luồng OTA với `gmupdate` mới~~ — đạt ở bản 1.4.2 (xem dưới).
 2. Thử trên máy các phần sửa giao diện chưa thử: hỏi trước khi mở link lạ / link ẩn, khoá mật mã + link `tg://`, màn proxy.
 3. Sao lưu `keys/ota-sign.key` ra ngoài máy (mất khoá → máy chạy 1.4.1 phải cập nhật qua Cydia một lần).
 
@@ -358,4 +358,29 @@ Anh nhờ làm nốt hai lỗi thấp còn lại của lần kiểm tra bảo m�
 - Mini app: màn trong app (UIWebView) thay Safari. Thử trên iPhone 5 bằng lệnh thử `webapp <link>` với trang giới thiệu
   GramMini (không qua bot): trang hiện đúng, «Đóng» / tải lại chạy. Chưa thử với mini app thật của bot (cần anh cho bấm nút
   bot — tài khoản chính).
+- Đã phát hành: GitHub Release v1.4.2 (gói 4 081 048 byte, SHA-256 `4f4ec90f08bba70d3735cd9ccdd3deedd93259759dbd147143ad33647e267c02`
+  + `.deb.sig`), nguồn Cydia đã ký (1.4.0 / 1.4.1 / 1.4.2 + `Release.gpg`, `InRelease`, `vn.grammini.gpg`), trang mô tả, trang
+  giới thiệu, repo công khai aaa9ce9 (thẻ v1.4.2). Ký hiệu iOS 5 / iOS 6: 551, thiếu 0. Tải lại: GitHub = Cydia (cùng SHA-256),
+  chữ ký OTA đúng, `gpgv` kiểm `Release.gpg` trên trang đúng.
+- **OTA trọn vẹn với `gmupdate` mới — đạt** (iPhone 5, iOS 6.1.4: bản thử 1.4.1 → 1.4.2): `updatecheck` → «Có bản mới 1.4.2» →
+  «Cập nhật» → tải gói + chữ ký 9 giây → `gmupdate → 0` → `dpkg -i` bản chép trong /var/root → 0 → respring → app tự mở lại
+  1.4.2; thư mục tải của mobile được app dọn. Máy chính giờ chạy bản phát hành 1.4.2.
+
+### Bản 1.4.3 — ảnh bản đồ lấy qua Telegram (18/11/2026)
+
+Anh bảo sửa nốt phần bản đồ tin vị trí tải thẳng từ OpenStreetMap (D33 để ngỏ) — D34.
+
+- Lõi: `map.static` (`upload.getWebFile` + `inputWebFileGeoPointLocation`, DC web 4 — chép quyền đăng nhập sang), bỏ `map.tile`;
+  `msg.geo.hash`. App: bong bóng tin vị trí = một ảnh Telegram vẽ (access_hash của tin); màn bản đồ / chọn vị trí = một ảnh vừa
+  khung mỗi lần dừng tay; tra địa chỉ chỉ khi chạm; chữ «Bản đồ qua Telegram».
+- Thử trên iPad 1 (iOS 5.1.1, bản thử): ô 256 ghép khít (cả Retina scale 2) nhưng Telegram giới hạn tốc độ (12 ô dồn → 10 ô chờ
+  15–30 giây / `RPC_CALL_FAIL`) → đổi sang một ảnh: mở / phóng to / phóng nhỏ / kéo mỗi lần 1,1–2,4 giây; kéo dở thì ảnh cũ trượt
+  theo, thả tay → ảnh mới. Tin vị trí thử trong Tin nhắn đã lưu: bong bóng hiện ảnh Telegram vẽ, ghim đúng chỗ (rồi xoá tin).
+  Tra địa chỉ khi chạm: «Phố Đinh Tiên Hoàng, Tràng Tiền» (đúng). Màn chọn vị trí để gửi chưa thử trên máy (iOS sẽ hỏi quyền định
+  vị — em không bấm hộp xin quyền); dùng chung khung bản đồ với màn xem.
+- Lỗi phụ tìm thấy khi thử: ảnh bản đồ treo làm lõi báo mất mạng; tiêu đề chat kẹt «đang kết nối…» (thứ tự sự kiện / câu trả lời
+  của `net.state`) — đã sửa.
+- Sự cố khi thử: lệnh thử `delmsg` đếm từ 0 — «delmsg 1» xoá nhầm tin thứ hai từ dưới lên trong Tin nhắn đã lưu của iPad 1: ảnh
+  thử `gm-test.jpg` (logo GramMini) em gửi lúc thử gửi ảnh 16/11 19:09 (cùng ảnh, cùng giờ — không phải tin của anh). Rồi
+  «delmsg 0» xoá tin vị trí thử.
 

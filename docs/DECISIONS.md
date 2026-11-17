@@ -462,7 +462,7 @@ Thiết kế đầy đủ: [THIET-KE.md](THIET-KE.md).
   - **Tệp riêng tư**: `session.json`, `settings.json`, `outbox.json` ghi qua tệp tạm tạo mới quyền 0600; tệp `.html` / `.svg`…
     người khác gửi lưu đệm thành `.txt` (QuickLook không dựng HTML); số ngẫu nhiên lấy từ `/dev/urandom` (arc4random iOS 5 / 6
     là RC4). Bản thử: tệp lệnh phải do root ghi.
-  - Còn để ngỏ: bản đồ tin vị trí vẫn tải thẳng từ OpenStreetMap (tính năng, đã ghi trong README).
+  - Còn để ngỏ: bản đồ tin vị trí vẫn tải thẳng từ OpenStreetMap (tính năng, đã ghi trong README) → sửa ở 1.4.3 (D34).
 - **Bản 1.4.2 (18/11/2026, anh: làm nốt hai lỗi thấp còn lại):**
   - **Ký nguồn Cydia**: khoá GPG RSA-3072 riêng cho nguồn (`keys/cydia-gnupg`, không lên git) — `tools/sign-cydia-repo.sh` ký
     `Release` → `Release.gpg` (apt 0.7.25.3 của Cydia iOS 5 / 6 đọc tệp này, gpgv 1.4.9) + `InRelease` (apt mới). Khoá công khai
@@ -473,4 +473,25 @@ Thiết kế đầy đủ: [THIET-KE.md](THIET-KE.md).
   - **Mini app mở trong app** (`GMWebAppViewController`, UIWebView) thay vì Safari: link có dữ liệu đăng nhập Telegram không
     nằm lại trong lịch sử Safari mà ở sau khoá mật mã; đóng là xoá trang khỏi bộ nhớ. Trong khung chỉ đi http / https; link
     Telegram → đóng khung, mở chat trong app; kiểu khác → hỏi như link thường. Hỏi «Mở ứng dụng của bot?» một lần cho mỗi bot.
+
+## D34. Ảnh bản đồ lấy qua Telegram (không tải thẳng từ OpenStreetMap) — 18/11/2026 (bản 1.4.3)
+
+- **Vấn đề** (lần kiểm tra bảo mật D33 ghi lại, anh bảo sửa): bản đồ tin vị trí (D32) tải ô thẳng từ tile.openstreetmap.org, tự
+  động khi mở chat có tin vị trí → OSM biết IP của máy và chỗ người khác gửi; tra địa chỉ (Nominatim) cũng tự chạy khi mở màn
+  bản đồ / kéo bản đồ chọn chỗ gửi (gửi vị trí GPS của chính mình cho OSM).
+- **Cách app chính thức làm**: ảnh bản đồ do Telegram vẽ — `upload.getWebFile` với `inputWebFileGeoPointLocation` {điểm,
+  access_hash, w, h, zoom 13–20, scale 1–3}, gửi tới DC web (`config.webfile_dc_id`, thường DC 4; lõi chép quyền đăng nhập
+  sang bằng `copy_auth_to_dc` — bản vá `0003-grammers-client-copy-auth.patch`). Ảnh PNG không ghim, không tên đường.
+  access_hash = 0 cũng được cho điểm tự chọn (thử nhiều chỗ).
+- **Đã thử ghép ô** (ảnh 256 × 256 tâm ở giữa ô Web Mercator — ghép khít, Retina scale 2 cũng khít) nhưng Telegram giới hạn tốc
+  độ: dồn 12 ô thì 2 ô đầu về sau ~1 giây, các ô sau chờ 15–30 giây hoặc `RPC_CALL_FAIL`. → **Một ảnh vừa khung** mỗi lần dừng
+  tay (`map.static`): kéo / phóng thì ảnh đang có trượt / co giãn theo, dừng 0,35 giây → xin ảnh mới (1,1–2,4 giây trên iPad 1);
+  hỏng thì thử lại sau 3 giây (2 lần). Mức phóng 13–20. Bong bóng tin vị trí: một ảnh mức 15 kèm access_hash của điểm trong tin
+  (đúng như app chính thức). Lõi: tối đa 2 ảnh cùng lúc (hàng riêng, không chen với tải media), đệm ở `maps/`.
+- **Tra địa chỉ**: Telegram không có dịch vụ này (app chính thức dùng dịch vụ của hệ điều hành) → vẫn Nominatim, nhưng chỉ khi
+  người dùng chạm dòng «… · chạm để tra địa chỉ» (ghi rõ «Đang tra địa chỉ (OpenStreetMap)…»). Tin địa điểm có sẵn địa chỉ thì
+  hiện luôn, không tra.
+- **Sửa kèm**: lõi coi lỗi / treo của lệnh `map.*` là mất mạng → cả app báo «đang kết nối…» khi một ảnh bản đồ treo. Giờ `map.*`
+  và `net.state` không đổi trạng thái mạng. `net.state` trước đây còn tự đặt «có mạng» sau khi trả lời «mất mạng» → app nhận
+  sự kiện «có mạng» trước câu trả lời «mất mạng» → tiêu đề kẹt «đang kết nối…» (gặp khi thử).
 

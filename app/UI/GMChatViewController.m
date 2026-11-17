@@ -3404,7 +3404,7 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     NSDictionary *geo = GMVal(m, @"geo");
     if (geo) {
         GMMapViewController *mv = [[GMMapViewController alloc] initWithLat:[GMVal(geo, @"lat") doubleValue] lng:[GMVal(geo, @"lng") doubleValue]
-                                                                      title:GMVal(geo, @"title")];
+                                                                      title:GMVal(geo, @"title") address:GMVal(geo, @"address")];
         [self.navigationController pushViewController:mv animated:YES];
         return;
     }
@@ -3847,7 +3847,8 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         c.photo.image = cached ?: (geo ? nil : [GMImages imageFromBase64:GMVal(photo, @"thumb")]);
         if (!cached && geo) {
             __weak GMBubbleCell *wc = c;
-            GMMapSnapshot([GMVal(geo, @"lat") doubleValue], [GMVal(geo, @"lng") doubleValue], ps, GMVal(geo, @"title"), ^(UIImage *img) {
+            GMMapSnapshot([GMVal(geo, @"lat") doubleValue], [GMVal(geo, @"lng") doubleValue], GMVal(geo, @"hash"), ps, GMVal(geo, @"title"),
+                          ^(UIImage *img) {
                 if ([wc.photoKey isEqual:pkey]) wc.photo.image = img;
             });
         } else if (!cached) {

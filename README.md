@@ -23,8 +23,8 @@ iOS 5.0 – 6.1.x, đã jailbreak (cần MobileSubstrate): iPhone 4 / 4S / 5, iP
 - Link t.me / @tên mở ngay trong app (chat, kênh, nhảy tới tin), link mời → «Tham gia»; nhóm / kênh chưa vào có nút «Tham gia».
 - Thả cảm xúc (emoji máy cũ không vẽ được thì hiện emoji gần nghĩa), bình chọn / câu đố (bỏ / rút phiếu), thanh tin ghim, ghim
   tin; nút bấm, bàn phím và nút «Menu» của bot, ứng dụng nhỏ (mini app) của bot mở ngay trong app, «Bắt đầu» với bot mới.
-- Nhắc hẹn / hẹn giờ gửi (nhấn giữ «Gửi»), tin nhắn nhanh (gõ «/»), vị trí trên bản đồ OpenStreetMap (xem và gửi), mã QR
-  chuyển khoản VietQR, danh thiếp.
+- Nhắc hẹn / hẹn giờ gửi (nhấn giữ «Gửi»), tin nhắn nhanh (gõ «/»), vị trí trên bản đồ (xem và gửi — ảnh bản đồ lấy qua
+  Telegram như app chính thức, không lộ IP / chỗ đang xem cho máy chủ bản đồ khác), mã QR chuyển khoản VietQR, danh thiếp.
 - iPad: màn chia đôi — danh sách bên trái, cuộc trò chuyện bên phải.
 - Xoá tin cho cả hai bên hoặc chỉ ở máy mình; tin tự xoá (1 ngày / 1 tuần / 1 tháng) theo từng chat hoặc mặc định cho chat mới.
 - Thư mục chat (đồng bộ với tài khoản), tìm kiếm chat / người / tin nhắn, danh bạ, tạo nhóm.
@@ -72,5 +72,5 @@ cargo run -p gm-cli -- probe --dc 2
 ## Giấy phép
 
 [GPL-3.0](LICENSE). Phần SOCKS5 lấy từ lõi Côn Bằng TV (GPL-3.0). `core/vendor/grammers-mtsender`, `core/vendor/grammers-client`
-giữ giấy phép MIT / Apache-2.0 của grammers; `core/vendor/ffmpeg` (bộ giải mã H.265, FFmpeg 7.1.5) giữ giấy phép LGPL 2.1+; bản đồ © OpenStreetMap (ODbL), địa chỉ từ Nominatim; `core/vendor/opus-1.4` giữ giấy phép BSD của Opus; `core/vendor/libvpx` (bộ giải mã VP9 cho sticker video)
+giữ giấy phép MIT / Apache-2.0 của grammers; `core/vendor/ffmpeg` (bộ giải mã H.265, FFmpeg 7.1.5) giữ giấy phép LGPL 2.1+; ảnh bản đồ do Telegram cung cấp; địa chỉ (khi chạm «tra địa chỉ») từ Nominatim, dữ liệu © OpenStreetMap (ODbL); `core/vendor/opus-1.4` giữ giấy phép BSD của Opus; `core/vendor/libvpx` (bộ giải mã VP9 cho sticker video)
 giữ giấy phép BSD + cấp quyền bằng sáng chế của WebM.

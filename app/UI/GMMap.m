@@ -58,35 +58,28 @@ UIImage *GMMapSnapshotCached(double lat, double lng, CGSize size) {
     return [GMSnapCache() objectForKey:GMSnapKey(lat, lng, size)];
 }
 
-void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^done)(UIImage *)) {
+/// Ảnh do lõi trả cần scale nào: màn Retina → 2.
+static NSInteger GMMapScale(void) {
+    return [UIScreen mainScreen].scale > 1 ? 2 : 1;
+}
+
+void GMMapSnapshot(double lat, double lng, NSString *hash, CGSize size, NSString *title, void (^done)(UIImage *)) {
     NSString *key = GMSnapKey(lat, lng, size);
     UIImage *hit = [GMSnapCache() objectForKey:key];
     if (hit) {
         done(hit);
         return;
     }
-    const NSInteger z = 15;
-    CGPoint c = GMWorldPoint(lat, lng, z);
-    double left = c.x - size.width / 2, top = c.y - size.height / 2;
-    NSInteger n = 1 << z;
-    NSMutableArray *tiles = [NSMutableArray array];  // @[x, y, wx]
-    for (NSInteger ty = (NSInteger)floor(top / 256); ty * 256 < top + size.height; ty++) {
-        if (ty < 0 || ty >= n) continue;
-        for (NSInteger tx = (NSInteger)floor(left / 256); tx * 256 < left + size.width; tx++) {
-            [tiles addObject:@[@(tx), @(ty), @(((tx % n) + n) % n)]];
-        }
-    }
-    NSMutableDictionary *got = [NSMutableDictionary dictionary];
-    __block NSUInteger pending = tiles.count;
-    void (^finish)(void) = ^{
+    NSMutableDictionary *args = [NSMutableDictionary dictionaryWithDictionary:@{
+        @"lat": @(lat), @"lng": @(lng), @"w": @((NSInteger)ceil(size.width)), @"h": @((NSInteger)ceil(size.height)),
+        @"zoom": @15, @"scale": @(GMMapScale())}];
+    if ([hash isKindOfClass:[NSString class]] && hash.length) [args setObject:hash forKey:@"hash"];
+    [GMCore call:@"map.static" args:args done:^(id ok, NSDictionary *err) {
+        UIImage *map = GMVal(ok, @"path") ? [UIImage imageWithContentsOfFile:GMVal(ok, @"path")] : nil;
         UIGraphicsBeginImageContextWithOptions(size, YES, 0);
         [GMHexColor(0xE8E4DC) setFill];
         UIRectFill(CGRectMake(0, 0, size.width, size.height));
-        for (NSArray *t in tiles) {
-            UIImage *img = [got objectForKey:[NSString stringWithFormat:@"%@/%@", [t objectAtIndex:0], [t objectAtIndex:1]]];
-            [img drawInRect:CGRectMake(floor([[t objectAtIndex:0] integerValue] * 256 - left),
-                                       floor([[t objectAtIndex:1] integerValue] * 256 - top), 256, 256)];
-        }
+        [map drawInRect:CGRectMake(0, 0, size.width, size.height)];
         UIImage *pin = GMPinImage();
         [pin drawAtPoint:CGPointMake(floor(size.width / 2 - pin.size.width / 2), floor(size.height / 2 - pin.size.height + 2))];
         if (title.length) {
@@ -98,37 +91,39 @@ void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^
         }
         UIImage *out = UIGraphicsGetImageFromCurrentImageContext();
         UIGraphicsEndImageContext();
-        if (got.count == tiles.count) [GMSnapCache() setObject:out forKey:key];  // thiếu ô (mất mạng) thì không đệm
+        if (map) [GMSnapCache() setObject:out forKey:key];  // chưa có ảnh (mất mạng) thì không đệm
         done(out);
-    };
-    if (!tiles.count) {
-        finish();
-        return;
-    }
-    for (NSArray *t in tiles) {
-        [GMCore call:@"map.tile" args:@{@"z": @(z), @"x": [t objectAtIndex:2], @"y": [t objectAtIndex:1]} done:^(id ok, NSDictionary *err) {
-            UIImage *img = GMVal(ok, @"path") ? [UIImage imageWithContentsOfFile:GMVal(ok, @"path")] : nil;
-            if (img) [got setObject:img forKey:[NSString stringWithFormat:@"%@/%@", [t objectAtIndex:0], [t objectAtIndex:1]]];
-            if (--pending == 0) finish();
-        }];
-    }
+    }];
 }
 
-#pragma mark - Bản đồ ô OpenStreetMap
+#pragma mark - Bản đồ một ảnh (Telegram vẽ)
 
-/// Bản đồ ô OSM: tâm (vĩ độ, kinh độ), mức phóng 3–18, kéo để di chuyển. Ghim cố định ở giữa.
-@interface GMOSMView : UIView
+/// Mức phóng Telegram vẽ được (`inputWebFileGeoPointLocation`: 13–20).
+static const NSInteger kMinZoom = 13, kMaxZoom = 20;
+
+/// Bản đồ: mỗi lần dừng tay xin Telegram MỘT ảnh vừa khung (lõi `map.static`) — Telegram giới hạn tốc độ (dồn hơn ~2 ảnh thì
+/// chờ 15–30 giây) nên không ghép ô. Kéo / phóng: ảnh đang có trượt / co giãn theo, dừng 0,35 giây → xin ảnh mới. Ghim cố định
+/// ở giữa; tâm (vĩ độ, kinh độ), mức phóng 13–20.
+@interface GMStaticMapView : UIView
 @property (nonatomic, assign) double lat, lng;
 @property (nonatomic, assign) NSInteger zoom;
 @property (nonatomic, copy) void (^onMove)(double lat, double lng);  // sau khi kéo / phóng xong
 - (void)centerLat:(double)lat lng:(double)lng;
+- (void)debugPan:(CGPoint)d end:(BOOL)end;
 @end
 
-@implementation GMOSMView {
-    NSMutableDictionary *_tiles;  // "z/x/y/tx" → UIImageView
-    UIView *_layer0;
+@implementation GMStaticMapView {
+    UIImageView *_img;
+    double _imgLat, _imgLng;  // tâm, mức phóng, cỡ (điểm) của ảnh đang hiện; _imgZoom 0 = chưa có ảnh
+    NSInteger _imgZoom;
+    CGSize _imgSize;
+    NSString *_want;  // ảnh đang hiện / đang xin (tâm, mức phóng, cỡ)
+    NSUInteger _gen;
+    NSInteger _fails;
+    BOOL _dragging;
     UIImageView *_pin;
     UILabel *_credit;
+    UIActivityIndicatorView *_spin;
 }
 
 - (instancetype)initWithFrame:(CGRect)f {
@@ -136,19 +131,21 @@ void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^
         self.clipsToBounds = YES;
         self.backgroundColor = GMHexColor(0xE8E4DC);
         _zoom = 16;
-        _tiles = [NSMutableDictionary dictionary];
-        _layer0 = [[UIView alloc] initWithFrame:self.bounds];
-        _layer0.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        [self addSubview:_layer0];
+        _img = [[UIImageView alloc] init];
+        _img.hidden = YES;
+        [self addSubview:_img];
         _pin = [[UIImageView alloc] initWithImage:GMPinImage()];
         [self addSubview:_pin];
         _credit = [[UILabel alloc] init];
         _credit.font = [UIFont systemFontOfSize:10];
         _credit.textColor = GMHexColor(0x333333);
-        _credit.text = @" © OpenStreetMap ";
+        _credit.text = @" Bản đồ qua Telegram ";
         _credit.backgroundColor = [UIColor colorWithWhite:1 alpha:0.75];
         [_credit sizeToFit];
         [self addSubview:_credit];
+        _spin = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
+        _spin.hidesWhenStopped = YES;
+        [self addSubview:_spin];
         for (int i = 0; i < 2; i++) {
             UIButton *b = [UIButton buttonWithType:UIButtonTypeRoundedRect];
             [b setTitle:i == 0 ? @"+" : @"−" forState:UIControlStateNormal];
@@ -168,6 +165,11 @@ void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^
     [self setNeedsLayout];
 }
 
+- (void)setZoom:(NSInteger)zoom {
+    _zoom = MAX(kMinZoom, MIN(kMaxZoom, zoom));
+    [self setNeedsLayout];
+}
+
 - (void)setWorldPoint:(CGPoint)p {
     double w = GMWorld(self.zoom);
     double x = fmod(fmod(p.x, w) + w, w), y = MAX(0, MIN(w, p.y));
@@ -176,10 +178,9 @@ void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^
 }
 
 - (void)zoomTap:(UIButton *)b {
-    NSInteger z = MAX(3, MIN(18, self.zoom + b.tag));
+    NSInteger z = MAX(kMinZoom, MIN(kMaxZoom, self.zoom + b.tag));
     if (z == self.zoom) return;
     self.zoom = z;
-    [self setNeedsLayout];
     if (self.onMove) self.onMove(self.lat, self.lng);
 }
 
@@ -188,42 +189,38 @@ void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^
     [g setTranslation:CGPointZero inView:self];
     CGPoint p = GMWorldPoint(self.lat, self.lng, self.zoom);
     [self setWorldPoint:CGPointMake(p.x - d.x, p.y - d.y)];
+    _dragging = g.state == UIGestureRecognizerStateBegan || g.state == UIGestureRecognizerStateChanged;
     [self setNeedsLayout];
     if (g.state == UIGestureRecognizerStateEnded && self.onMove) self.onMove(self.lat, self.lng);
+}
+
+/// Công cụ thử: như kéo tay một đoạn `d` (điểm); `end` = thả tay (xin ảnh mới).
+- (void)debugPan:(CGPoint)d end:(BOOL)end {
+    CGPoint p = GMWorldPoint(self.lat, self.lng, self.zoom);
+    [self setWorldPoint:CGPointMake(p.x - d.x, p.y - d.y)];
+    _dragging = !end;
+    [self setNeedsLayout];
+    if (end && self.onMove) self.onMove(self.lat, self.lng);
 }
 
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGSize s = self.bounds.size;
-    CGPoint c = GMWorldPoint(self.lat, self.lng, self.zoom);
-    double left = c.x - s.width / 2, top = c.y - s.height / 2;
-    NSInteger n = 1 << self.zoom;
-    NSMutableSet *want = [NSMutableSet set];
-    for (NSInteger ty = (NSInteger)floor(top / 256); ty * 256 < top + s.height; ty++) {
-        if (ty < 0 || ty >= n) continue;
-        for (NSInteger tx = (NSInteger)floor(left / 256); tx * 256 < left + s.width; tx++) {
-            NSInteger wx = ((tx % n) + n) % n;  // vòng qua kinh tuyến 180
-            NSString *key = [NSString stringWithFormat:@"%ld/%ld/%ld/%ld", (long)self.zoom, (long)wx, (long)ty, (long)tx];
-            [want addObject:key];
-            UIImageView *iv = [_tiles objectForKey:key];
-            if (!iv) {
-                iv = [[UIImageView alloc] init];
-                [_tiles setObject:iv forKey:key];
-                [_layer0 addSubview:iv];
-                [self loadTile:iv z:self.zoom x:wx y:ty key:key];
-            }
-            iv.frame = CGRectMake(floor(tx * 256 - left), floor(ty * 256 - top), 256, 256);
-        }
-    }
-    for (NSString *key in _tiles.allKeys) {
-        if (![want containsObject:key]) {
-            [[_tiles objectForKey:key] removeFromSuperview];
-            [_tiles removeObjectForKey:key];
-        }
+    _img.hidden = _imgZoom == 0;
+    if (_imgZoom) {
+        // ảnh đang có đặt theo toạ độ thế giới ở mức phóng hiện tại (kéo: trượt; phóng: co giãn quanh tâm của ảnh)
+        double f = pow(2, (double)(self.zoom - _imgZoom)), w = GMWorld(self.zoom);
+        CGPoint a = GMWorldPoint(_imgLat, _imgLng, self.zoom), c = GMWorldPoint(self.lat, self.lng, self.zoom);
+        double dx = a.x - c.x;
+        if (dx > w / 2) dx -= w;  // vòng qua kinh tuyến 180
+        else if (dx < -w / 2) dx += w;
+        CGSize is = CGSizeMake(_imgSize.width * f, _imgSize.height * f);
+        _img.frame = CGRectMake(floor(s.width / 2 + dx - is.width / 2), floor(s.height / 2 + (a.y - c.y) - is.height / 2), is.width, is.height);
     }
     _pin.center = CGPointMake(floorf(s.width / 2), floorf(s.height / 2) - _pin.bounds.size.height / 2 + 2);
     _credit.frame = CGRectMake(s.width - _credit.bounds.size.width - 4, s.height - _credit.bounds.size.height - 4,
                                _credit.bounds.size.width, _credit.bounds.size.height);
+    _spin.center = CGPointMake(18, s.height - 18);
     CGFloat by = 10;
     for (UIView *v in self.subviews) {
         if ([v isKindOfClass:[UIButton class]]) {
@@ -231,16 +228,60 @@ void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^
             by += 50;
         }
     }
+    if (!_dragging) [self scheduleFetch];
 }
 
-- (void)loadTile:(UIImageView *)iv z:(NSInteger)z x:(NSInteger)x y:(NSInteger)y key:(NSString *)key {
-    __weak GMOSMView *ws = self;
-    [GMCore call:@"map.tile" args:@{@"z": @(z), @"x": @(x), @"y": @(y)} done:^(id ok, NSDictionary *err) {
-        NSString *path = GMVal(ok, @"path");
-        GMOSMView *s = ws;
-        if (!path.length || !s || [s->_tiles objectForKey:key] != iv) return;
-        UIImage *img = [UIImage imageWithContentsOfFile:path];
-        if (img) iv.image = img;
+/// Cỡ ảnh xin (điểm): vừa khung, Telegram nhận 16–1024.
+- (CGSize)wantSize {
+    CGSize s = self.bounds.size;
+    return CGSizeMake(MAX(16, MIN(1024, ceil(s.width))), MAX(16, MIN(1024, ceil(s.height))));
+}
+
+/// Tâm / mức phóng / cỡ đổi (đã dừng tay) → xin ảnh mới sau 0,35 giây (lần đổi sau huỷ lần trước).
+- (void)scheduleFetch {
+    if (self.bounds.size.width < 16 || self.bounds.size.height < 16) return;
+    CGSize ws = [self wantSize];
+    NSString *key = [NSString stringWithFormat:@"%.6f,%.6f,%ld,%.0fx%.0f", self.lat, self.lng, (long)self.zoom, ws.width, ws.height];
+    if ([key isEqual:_want]) return;
+    _want = key;
+    _fails = 0;
+    NSUInteger gen = ++_gen;
+    __weak GMStaticMapView *wv = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        GMStaticMapView *v = wv;
+        if (v && v->_gen == gen) [v fetch:gen];
+    });
+}
+
+- (void)fetch:(NSUInteger)gen {
+    double lat = self.lat, lng = self.lng;
+    NSInteger z = self.zoom;
+    CGSize ws = [self wantSize];
+    [_spin startAnimating];
+    __weak GMStaticMapView *wv = self;
+    NSDictionary *args = @{@"lat": @(lat), @"lng": @(lng), @"w": @((NSInteger)ws.width), @"h": @((NSInteger)ws.height),
+                           @"zoom": @(z), @"scale": @(GMMapScale())};
+    [GMCore call:@"map.static" args:args done:^(id ok, NSDictionary *err) {
+        GMStaticMapView *v = wv;
+        if (!v || v->_gen != gen) return;  // đã kéo / phóng tiếp → ảnh mới hơn đang xin
+        UIImage *img = GMVal(ok, @"path") ? [UIImage imageWithContentsOfFile:GMVal(ok, @"path")] : nil;
+        if (img) {
+            [v->_spin stopAnimating];
+            v->_img.image = img;
+            v->_imgLat = lat;
+            v->_imgLng = lng;
+            v->_imgZoom = z;
+            v->_imgSize = ws;
+            [v setNeedsLayout];
+        } else if (v->_fails++ < 2) {
+            // Telegram chậm / mất mạng: thử lại sau 3 giây (tối đa 2 lần; kéo / phóng tiếp thì xin lại từ đầu)
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                GMStaticMapView *v2 = wv;
+                if (v2 && v2->_gen == gen) [v2 fetch:gen];
+            });
+        } else {
+            [v->_spin stopAnimating];
+        }
     }];
 }
 
@@ -252,22 +293,28 @@ void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^
 @end
 
 @implementation GMMapViewController {
-    GMOSMView *_map;
+    GMStaticMapView *_map;
     CLLocationManager *_lm;
     UIView *_panel;
     UILabel *_titleLabel, *_addrLabel;
     double _lat, _lng;
-    NSString *_placeTitle;
+    NSString *_placeTitle, *_placeAddress;
     void (^_done)(double, double);
     BOOL _picker, _located;
     NSUInteger _lookupGen;
+    NSString *_address;  // địa chỉ đã tra cho điểm hiện tại
 }
 
 - (instancetype)initWithLat:(double)lat lng:(double)lng title:(NSString *)title {
+    return [self initWithLat:lat lng:lng title:title address:nil];
+}
+
+- (instancetype)initWithLat:(double)lat lng:(double)lng title:(NSString *)title address:(NSString *)address {
     if ((self = [super init])) {
         _lat = lat;
         _lng = lng;
-        _placeTitle = [title copy];
+        _placeTitle = [title isKindOfClass:[NSString class]] ? [title copy] : nil;
+        _placeAddress = [address isKindOfClass:[NSString class]] && [address length] ? [address copy] : nil;
         self.title = @"Vị trí";
         self.hidesBottomBarWhenPushed = YES;
     }
@@ -299,7 +346,7 @@ void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^
     self.view.backgroundColor = [GMTheme background];
     CGRect b = self.view.bounds;
     CGFloat panelH = _picker ? 116 : 70;
-    _map = [[GMOSMView alloc] initWithFrame:CGRectMake(0, 0, b.size.width, b.size.height - panelH)];
+    _map = [[GMStaticMapView alloc] initWithFrame:CGRectMake(0, 0, b.size.width, b.size.height - panelH)];
     _map.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     _map.zoom = _picker ? 15 : 16;
     [_map centerLat:_lat lng:_lng];
@@ -319,6 +366,8 @@ void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^
     _addrLabel.numberOfLines = 2;
     _addrLabel.frame = CGRectMake(14, 31, b.size.width - 28, 34);
     _addrLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    _addrLabel.userInteractionEnabled = YES;  // chạm → tra địa chỉ (chỉ khi người dùng muốn: gửi toạ độ cho OpenStreetMap)
+    [_addrLabel addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(addressTapped)]];
     [_panel addSubview:_addrLabel];
     [self.view addSubview:_panel];
     __weak GMMapViewController *ws = self;
@@ -336,7 +385,7 @@ void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^
             s->_lat = lat;
             s->_lng = lng;
             s->_located = YES;  // người dùng đã tự chọn chỗ → không nhảy về vị trí GPS nữa
-            [s lookup];
+            [s pointChanged];
         };
         self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Vị trí tôi" style:UIBarButtonItemStyleBordered
                                                                                  target:self action:@selector(locateMe)];
@@ -345,7 +394,8 @@ void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^
         self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Mở…" style:UIBarButtonItemStyleBordered
                                                                                  target:self action:@selector(openSheet)];
         _titleLabel.text = _placeTitle.length ? _placeTitle : @"Vị trí được chia sẻ";
-        [self lookup];
+        _address = _placeAddress;
+        [self pointChanged];
     }
 }
 
@@ -368,19 +418,46 @@ void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^
     [_lm startUpdatingLocation];
 }
 
-/// Địa chỉ của điểm giữa bản đồ (chờ 0,8 giây sau lần kéo cuối — Nominatim chỉ cho ~1 lần / giây).
-- (void)lookup {
-    _addrLabel.text = [NSString stringWithFormat:@"%.5f, %.5f", _lat, _lng];
+/// Điểm giữa bản đồ đổi: hiện toạ độ + «chạm để tra địa chỉ» (không tự tra: Nominatim của OSM sẽ biết IP + chỗ đang xem).
+- (void)pointChanged {
+    ++_lookupGen;
+    if (_address.length && !_picker) {
+        _addrLabel.text = _address;
+        return;
+    }
+    _address = nil;
+    _addrLabel.text = [NSString stringWithFormat:@"%.5f, %.5f · chạm để tra địa chỉ", _lat, _lng];
+}
+
+/// Chạm dòng địa chỉ: tra địa chỉ của điểm giữa bản đồ (OpenStreetMap — Telegram không có dịch vụ tra địa chỉ).
+- (void)addressTapped {
+    if (_address.length) return;
     NSUInteger gen = ++_lookupGen;
     double lat = _lat, lng = _lng;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    _addrLabel.text = @"Đang tra địa chỉ (OpenStreetMap)…";
+    [GMCore call:@"map.address" args:@{@"lat": @(lat), @"lng": @(lng)} done:^(id ok, NSDictionary *err) {
         if (gen != _lookupGen) return;
-        [GMCore call:@"map.address" args:@{@"lat": @(lat), @"lng": @(lng)} done:^(id ok, NSDictionary *err) {
-            NSString *a = GMVal(ok, @"address");
-            if (gen != _lookupGen || !a.length) return;
+        NSString *a = GMVal(ok, @"address");
+        if (a.length) {
+            _address = a;
             _addrLabel.text = a;
-        }];
-    });
+        } else {
+            _addrLabel.text = [NSString stringWithFormat:@"%.5f, %.5f · %@", lat, lng,
+                               err ? @"không tra được, chạm để thử lại" : @"không có địa chỉ"];
+        }
+    }];
+}
+
+- (void)debugAddress {
+    [self addressTapped];
+}
+
+- (void)debugZoom:(NSInteger)d {
+    _map.zoom = _map.zoom + d;
+}
+
+- (void)debugPanX:(CGFloat)x y:(CGFloat)y end:(BOOL)end {
+    [_map debugPan:CGPointMake(x, y) end:end];
 }
 
 - (void)gotLocation:(CLLocation *)loc {
@@ -391,7 +468,7 @@ void GMMapSnapshot(double lat, double lng, CGSize size, NSString *title, void (^
     _lng = loc.coordinate.longitude;
     _map.zoom = 16;
     [_map centerLat:_lat lng:_lng];
-    [self lookup];
+    [self pointChanged];
 }
 
 - (void)locationManager:(CLLocationManager *)m didUpdateLocations:(NSArray *)locations {

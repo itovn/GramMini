@@ -265,6 +265,19 @@ static void GMFindText(UIView *v, NSString *text) {
             [nav pushViewController:[[GMMapViewController alloc] initWithLat:[[p objectAtIndex:0] doubleValue] lng:[[p objectAtIndex:1] doubleValue]
                                                                        title:nil] animated:YES];
         }
+    } else if ([cmd isEqual:@"mapaddr"] && [top isKindOfClass:[GMMapViewController class]]) {
+        // mapaddr — như chạm dòng địa chỉ trên màn bản đồ (tra địa chỉ)
+        [(GMMapViewController *)top debugAddress];
+    } else if ([cmd isEqual:@"mapzoom"] && [top isKindOfClass:[GMMapViewController class]]) {
+        // mapzoom <±n> — phóng to / nhỏ màn bản đồ
+        [(GMMapViewController *)top debugZoom:arg.integerValue];
+    } else if ([cmd isEqual:@"mappan"] && [top isKindOfClass:[GMMapViewController class]]) {
+        // mappan <dx> <dy> [1] — kéo màn bản đồ một đoạn (điểm); 1 = thả tay (xin ảnh mới)
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        if (p.count >= 2) {
+            [(GMMapViewController *)top debugPanX:[[p objectAtIndex:0] floatValue] y:[[p objectAtIndex:1] floatValue]
+                                              end:p.count > 2 && [[p objectAtIndex:2] boolValue]];
+        }
     } else if ([cmd isEqual:@"schedsheet"] && [top isKindOfClass:[GMChatViewController class]]) {
         // schedsheet — bảng hẹn giờ cho chữ đang soạn (gõ trước bằng «type»); chọn bằng «sheet <i>»
         [(GMChatViewController *)top debugScheduleSheet];

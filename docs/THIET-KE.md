@@ -407,7 +407,7 @@ Safari iOS 6.
 
 Sticker động (rlottie), nhiều tài khoản, chủ đề diễn đàn (forum topics), bình luận kênh, media đã chia sẻ, emoji bằng ảnh.
 Đã làm: sticker động TGS + video WebM (D26, D27), chủ đề diễn đàn (D28), media đã chia sẻ.
-Đã làm thêm (D31, D32): link t.me trong app, cảm xúc, nút / bàn phím bot, bình chọn, tin ghim, nhắc hẹn, vị trí (OSM), iPad chia
+Đã làm thêm (D31, D32): link t.me trong app, cảm xúc, nút / bàn phím bot, bình chọn, tin ghim, nhắc hẹn, vị trí (bản đồ qua Telegram), iPad chia
 đôi, tin nhắn nhanh «/», VietQR, danh thiếp. Còn lại: nhiều tài khoản, bình luận kênh, tạo bình chọn, gọi điện.
 
 ---

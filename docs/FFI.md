@@ -117,8 +117,8 @@ biết (có trong danh sách chat / tin đã tải — access_hash lưu trong ph
 | `messages.pin` | `peer`, `id`, `unpin`?, `notify`? | `{}`; nhóm / kênh cần quyền quản trị (`CHAT_ADMIN_REQUIRED`) |
 | `messages.scheduled` | `peer` | `[Message]` tin đã hẹn giờ (`date` = giờ gửi), sớm → muộn |
 | `messages.scheduledSend` / `messages.scheduledDelete` | `peer`, `ids` | `{}` — gửi ngay / huỷ tin hẹn giờ |
-| `map.tile` | `z`, `x`, `y` | `{path}` — ô bản đồ OpenStreetMap 256 × 256 PNG (đệm `maps/`) |
-| `map.address` | `lat`, `lng` | `{address}` — Nominatim, tiếng Việt, 4 phần đầu |
+| `map.static` | `lat`, `lng`, `hash`? (access_hash của điểm trong tin, chuỗi), `w`, `h` (16–1024 điểm), `zoom`? (13–20, mặc định 15), `scale`? (1–3) | `{path}` — ảnh bản đồ do Telegram vẽ (`upload.getWebFile` + `inputWebFileGeoPointLocation`, DC web), PNG `w·scale × h·scale`, không ghim (đệm `maps/`). Tối đa 2 ảnh cùng lúc — Telegram giới hạn tốc độ |
+| `map.address` | `lat`, `lng` | `{address}` — Nominatim của OpenStreetMap, tiếng Việt, 4 phần đầu (app chỉ gọi khi người dùng chạm) |
 | `messages.sendGeo` | `peer`, `lat`, `lng`, `reply_to`? | `Message` (tin vị trí thật của Telegram) |
 | `messages.sendContact` | `peer`, `phone`, `first`, `last`? | `Message` (danh thiếp) |
 | `vietqr.make` | `bin` (mã ngân hàng 6 số), `account`, `amount`? (đồng), `note`? | `{payload, size, bits}` — chuỗi VietQR (EMVCo / NAPAS) + ma trận QR (`bits`: '1' ô đen, hàng nối hàng) |
@@ -131,7 +131,7 @@ biết (có trong danh sách chat / tin đã tải — access_hash lưu trong ph
   - `"buttons"`: nút dưới tin của bot, mảng hàng `[{t, k: url (+u) | web (+u: mini app) | cb (+d hex) | copy (+c) | user (+id) | other}]`;
   - `"keyboard"`: bàn phím trả lời của bot `{rows: [[{t, k: text | phone | geo | web (+u) | other}]], single, persistent, placeholder}` hoặc `{hide: true}`;
   - `"poll"`: `{id, q, answers: [{t, o}], closed, multi, quiz, public, results: {total, voters: [{o, n, chosen, correct}], solution, min}}`;
-  - `"geo"`: `{lat, lng, title?, address?, live?}`; `"contact"`: `{phone, first, last, user?}`;
+  - `"geo"`: `{lat, lng, hash, title?, address?, live?}` (`hash`: access_hash của điểm, chuỗi — cho `map.static`); `"contact"`: `{phone, first, last, user?}`;
   - `"links"` gồm cả @tên trong chữ.
 - Tên người trong danh bạ là **tên mình lưu** (máy chủ Telegram thay tên hồ sơ bằng tên trong danh bạ).
 - `Dialog`: `{"peer", "name", "kind": "user"|"group"|"channel", "unread", "pinned", "muted", "read_in", "read_out", "photo", "photo_dc", "contact", "bot", "archived", "marked_unread", "forum" (nhóm có chủ đề), "last": Message | null}`

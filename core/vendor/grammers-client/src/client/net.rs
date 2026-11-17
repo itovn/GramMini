@@ -113,7 +113,8 @@ impl Client {
         self.0.handle.invoke_in_dc(dc_id, request).await
     }
 
-    pub(crate) async fn copy_auth_to_dc(&self, target_dc_id: i32) -> Result<(), InvocationError> {
+    /// GramMini: công khai để gửi `upload.getWebFile` tới DC web (`config.webfile_dc_id`) — chép quyền đăng nhập sang DC đó.
+    pub async fn copy_auth_to_dc(&self, target_dc_id: i32) -> Result<(), InvocationError> {
         let mut auth_copied_to_dcs = self.0.auth_copied_to_dcs.lock().await;
         if auth_copied_to_dcs.contains(&target_dc_id) {
             return Ok(());

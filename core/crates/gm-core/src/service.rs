@@ -1381,7 +1381,11 @@ impl Core {
         // Trạng thái của `dispatch` gộp mọi nhánh (kiểu TL to) — để trên heap, khỏi tràn ngăn xếp luồng (Windows 1 MB, tokio 2 MB)
         let r = Box::pin(self.dispatch(method, &a)).await;
         let ms = t.elapsed().as_millis();
+        // Không nói gì về kết nối chính tới Telegram: bản đồ (DC web / OpenStreetMap — một ô treo không phải mất mạng) và
+        // `net.state` (chỉ đọc; đổi trạng thái sau khi đọc → app nhận sự kiện «được» trước câu trả lời «mất», kẹt «đang kết nối…»)
+        let side = method == "net.state" || method.starts_with("map.");
         match &r {
+            _ if side => {}
             Ok(_) => {
                 self.set_net(true);
                 if !lock(&self.outbox).is_empty() {
@@ -2021,7 +2025,7 @@ impl Core {
             "messages.vote" => Box::pin(self.vote(a)).await,
             "messages.sendPoll" => Box::pin(self.send_poll(a)).await,
             "messages.pinned" => Box::pin(self.pinned_list(a)).await,
-            "map.tile" => Box::pin(self.map_tile(a)).await,
+            "map.static" => Box::pin(self.map_static(a)).await,
             "map.address" => Box::pin(self.map_address(a)).await,
             "messages.sendGeo" => Box::pin(self.send_geo(a)).await,
             "vietqr.make" => self.vietqr_make(a),
