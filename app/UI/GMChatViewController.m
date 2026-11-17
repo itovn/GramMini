@@ -29,6 +29,8 @@ static NSString *const GMUTMovie = @"public.movie";
 static const CGFloat kPadX = 9, kPadY = 6, kBarH = 48, kPanelH = 44, kNameH = 18, kReplyH = 38, kProxyH = 34, kFwdH = 18;
 static const CGFloat kInputMinH = 36, kInputMaxH = 112;  // ô nhập: 1 dòng … ~5 dòng
 static const CGFloat kVoiceH = 44, kVoiceW = 210, kStickerMax = 150, kAttachW = 40, kDocH = 46, kDocW = 220;
+// Tệp không chú thích: giờ xuống một dòng riêng dưới dòng «cỡ · chạm để mở» (bong bóng tệp 220 điểm không đủ chỗ cho cả hai)
+static const CGFloat kDocTimeH = 10;
 static const CGFloat kTimeW0 = 6;  // khoảng trống trước giờ
 
 #pragma mark - Mục xem bằng QuickLook (tên thật của tệp làm tiêu đề)
@@ -2033,7 +2035,7 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         BOOL visual = GMVal(m, @"photo") || [self isVideo:m];
         BOOL caption = (!visual && ![self isFile:m]) || [GMVal(m, @"text") length] > 0;
         CGFloat photoH = visual ? [self photoSize:m].height + (caption ? 4 : 0) - (caption ? 0 : 2 * kPadY - 6) : 0;
-        if ([self isFile:m]) photoH = kDocH + (caption ? 4 : 0);
+        if ([self isFile:m]) photoH = kDocH + (caption ? 4 : kDocTimeH);
         h = (caption ? [self bodySize:m].height : 0) + photoH + 2 * kPadY + ([self showName:r] ? kNameH : 0) +
             (GMVal(m, @"reply_to") ? kReplyH : 0) +
             (GMVal(m, @"fwd") ? kFwdH : 0) +
@@ -2207,7 +2209,7 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         c.docName.frame = CGRectMake(cx + 52, cy + 3, inner - 52, 19);
         c.docInfo.textColor = out ? [GMTheme checkColor] : [GMTheme secondaryText];
         c.docInfo.frame = CGRectMake(cx + 52, cy + 23, inner - 52, 17);
-        cy += kDocH + (caption ? 4 : 0);
+        cy += kDocH + (caption ? 4 : kDocTimeH);
     }
     [self refreshDoc:c];
     [self gifFor:c msg:m on:gif];

@@ -259,3 +259,9 @@
   Quyền riêng tư hiện đúng; đọc mức mặc định được. Chưa đặt tự xoá ở chat thật (sẽ hiện thông báo cho người khác).
 - Sticker video WebM (D27): crate `gm-webm` + libvpx NEON. iPhone 5: sticker video thật trong Tin nhắn đã lưu chạy 13,6 ms / khung;
   iPad 1 (iOS 5): 19 ms / khung. Tin thử đã xoá.
+
+### Bản 1.2.1 — sửa giờ đè lên tin tệp (17/11/2026)
+
+- Tin tệp không chú thích: giờ (+ dấu đã đọc) đè lên dòng «cỡ · chạm để mở» trên iPhone (bong bóng tệp 220 điểm không đủ chỗ
+  cho cả hai trên một hàng) → giờ xuống dòng riêng dưới dòng đó (bong bóng cao thêm 10 điểm). iPhone 5: kiểm trên tin tệp có sẵn
+  trong Tin nhắn đã lưu — đạt.
