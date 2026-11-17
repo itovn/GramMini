@@ -12,6 +12,7 @@ gm-core = { path = "../gm-core" }
 gm-opus = { path = "../gm-opus" }
 gm-lottie = { path = "../gm-lottie" }
 gm-webm = { path = "../gm-webm" }
+gm-hevc = { path = "../gm-hevc" }
 png = "0.18"
 grammers-client.workspace = true
 grammers-mtsender.workspace = true

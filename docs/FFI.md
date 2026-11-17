@@ -37,8 +37,9 @@ biết (có trong danh sách chat / tin đã tải — access_hash lưu trong ph
 | `proxy.set` | `link` (null = đi thẳng) | `{}` — lưu, ngắt kết nối cũ, kết nối mới đi đường mới |
 | `proxy.test` | `link` | `{"ms"}` — tạo auth key qua đường đó tới DC2; lỗi `PROXY_LINK`, `PROXY_FAIL`, `TIMEOUT` |
 | `dialogs.list` | `limit` (50) | `[Dialog]` |
-| `messages.history` | `peer`, `limit` (40), `offset_id`? | `[Message]` mới → cũ |
-| `messages.send` | `peer`, `text`, `reply_to`?, `schedule`? (Unix giây — hẹn giờ), `queue`? | `Message`; hẹn giờ → `{"scheduled": true}`; `queue` + lỗi mạng → `{"queued": true, "local_id", …}` (hàng chờ, xem `outbox.*`) |
+| `messages.history` | `peer`, `limit` (40), `offset_id`?, `topic`? | `[Message]` mới → cũ; có `topic` (chủ đề diễn đàn, General = 1) → `{"msgs": [Message], "more", "next"}` (`next` = `offset_id` trang sau) |
+| `topics.list` | `peer`, `limit` (50, ≤ 100), `q`?, `offset`? `{date, id, topic}` (chủ đề cuối trang trước: ngày + mã tin cuối, mã chủ đề) | `{"count", "topics": [Topic]}` — thứ tự máy chủ (ghim trước) |
+| `messages.send` | `peer`, `text`, `reply_to`?, `topic`? (gửi vào chủ đề — mọi lệnh `messages.send*` đều nhận), `schedule`? (Unix giây — hẹn giờ), `queue`? | `Message`; hẹn giờ → `{"scheduled": true}`; `queue` + lỗi mạng → `{"queued": true, "local_id", …}` (hàng chờ, xem `outbox.*`) |
 | `messages.typing` | `peer`, `action`: typing \| recording \| voice \| photo \| video \| file \| cancel | `{}` — báo «đang …» |
 | `messages.search` | `q`, `peer`? (không có = mọi chat), `limit` (30) | `[Message + chat_name]` |
 | `messages.media` | `peer`, `kind`: photo (ảnh + video) \| file \| voice \| link \| music, `limit` (60), `offset_id`? | `[Message]` mới → cũ |
@@ -86,13 +87,13 @@ biết (có trong danh sách chat / tin đã tải — access_hash lưu trong ph
 | `messages.edit` | `peer`, `id`, `text` | `{}` |
 | `messages.delete` | `peer`, `ids`, `revoke`? (mặc định true) | `{"deleted"}` — `revoke`: xoá cho cả hai bên / mọi người; false: chỉ phía mình (chat riêng, nhóm thường); kênh / siêu nhóm luôn xoá cho mọi người |
 | `messages.forward` | `from`, `to`, `ids` | `[Message]` (tin mới ở chat đích) |
-| `messages.read` | `peer` | `{}` |
+| `messages.read` | `peer`, `topic`?, `max_id`? | `{}` — có `topic`: chỉ chủ đề đó, tới `max_id` (`messages.readDiscussion`) |
 | `media.avatar` | `peer`, `photo`, `dc` | `{"path"}` — ảnh đại diện nhỏ (JPEG, có đệm trên đĩa) |
 | `media.photo` | `peer`, `id`, `big` | `{"path"}` — ảnh trong tin, cỡ vừa / lớn |
 | `media.sticker` | `peer`, `id` | `{"path"}` — PNG (WebP đổi sang; sticker động: ảnh thu nhỏ) |
 | `media.stickerfile` | `peer`, `id`, `kind`? (`tgs` mặc định \| `webm`) | `{"path"}` — tệp gốc sticker động (`media/s<peer>_<id>_a.tgs`, kiểm gzip) hoặc sticker video (`…_v.webm`, kiểm EBML); lỗi `NOT_ANIMATED`, `DECODE` |
 | `media.voice` | `peer`, `id` | `{"path", "duration"}` — WAV 24 kHz đơn kênh |
-| `media.document` | `peer`, `id` | `{"path"}` — tệp / video gốc (`media/d<peer>_<id>.<đuôi>`); tải có sự kiện `media.progress` |
+| `media.document` | `peer`, `id`, `video`? | `{"path", "hevc"?}` — tệp / video gốc (`media/d<peer>_<id>.<đuôi>`); tải có sự kiện `media.progress`. `video`: tệp gốc không phải H.264 mà Telegram có bản H.264 → tải bản đó (≤ 720); không có → `hevc: true` nếu tệp là H.265 (iOS 5 / 6 chỉ phát tiếng) |
 | `media.thumb` | `peer`, `id` | `{"path"}` — ảnh xem trước JPEG của video / tệp |
 | `messages.sendPhoto` | `peer`, `path` (JPEG), `caption`?, `reply_to`? | `Message` |
 | `messages.sendVoice` | `peer`, `path` (WAV 16 bit đơn kênh), `reply_to`? | `Message` (Opus + dạng sóng) |
@@ -109,10 +110,11 @@ biết (có trong danh sách chat / tin đã tải — access_hash lưu trong ph
 - `DocRef` (sticker / GIF): `{"doc" (chuỗi), "emoji", "mime", "w", "h", "duration", "animated"}` — lõi giữ tài liệu theo mã để gửi lại.
 - `Message` còn có `"scheduled"` (tin hẹn giờ vừa tới giờ), `"silent"`, `"mentioned"`.
 - Tên người trong danh bạ là **tên mình lưu** (máy chủ Telegram thay tên hồ sơ bằng tên trong danh bạ).
-- `Dialog`: `{"peer", "name", "kind": "user"|"group"|"channel", "unread", "pinned", "muted", "read_in", "read_out", "photo", "photo_dc", "contact", "bot", "archived", "marked_unread", "last": Message | null}`
+- `Dialog`: `{"peer", "name", "kind": "user"|"group"|"channel", "unread", "pinned", "muted", "read_in", "read_out", "photo", "photo_dc", "contact", "bot", "archived", "marked_unread", "forum" (nhóm có chủ đề), "last": Message | null}`
+- `Topic`: `{"id" (General = 1), "title", "color" (RGB, 0 = không có), "emoji" (có biểu tượng emoji riêng), "closed", "pinned", "hidden", "date", "top" (mã tin cuối), "unread", "mentions", "read_in", "read_out", "muted", "last": Message | null}`
 - `StickerSet`: `{"id", "access_hash", "title", "short_name", "count", "installed", "archived", "masks", "emojis"}` (mã là chuỗi). Tin sticker: `sticker.set` = `{id, access_hash}` hoặc `{short_name}`.
 - `Folder`: `{"id", "title", "emoticon", "contacts", "non_contacts", "groups", "broadcasts", "bots", "exclude_muted", "exclude_read", "exclude_archived", "include": [peer], "exclude": [peer], "pinned": [peer], "chatlist"?: true}` — peer của mình là `"self"`; app tự lọc danh sách chat (như Telegram gốc).
-- `Message`: `{"id", "peer", "date" (Unix), "out", "text", "from", "media": null|"photo"|"video"|"voice"|"audio"|"sticker"|"file"|"image"|"contact"|"poll"|"geo"|"dice"|"media", "service", "reply_to", "edited", "from_id", "links": [string], "proxy": string | null, "fwd": string | null, "photo": {"w", "h", "thumb"} | null, "sticker": {"emoji", "w", "h", "animated", "mime"} | null, "voice": {"duration", "waveform": [0–31]} | null, "doc": {"name", "size", "mime", "kind": "gif"|"round"|"video"|"audio"|"file", "duration", "w", "h", "thumb", "has_thumb"} | null}` — tin hệ thống: `text` là câu mô tả tiếng Việt
+- `Message`: `{"id", "peer", "date" (Unix), "out", "text", "from", "media": null|"photo"|"video"|"voice"|"audio"|"sticker"|"file"|"image"|"contact"|"poll"|"geo"|"dice"|"media", "service", "reply_to" (tin được trả lời thật — tin thường trong chủ đề diễn đàn không tính), "topic" (chủ đề diễn đàn; null = General / nhóm thường), "edited", "from_id", "links": [string], "proxy": string | null, "fwd": string | null, "photo": {"w", "h", "thumb"} | null, "sticker": {"emoji", "w", "h", "animated", "mime"} | null, "voice": {"duration", "waveform": [0–31]} | null, "doc": {"name", "size", "mime", "kind": "gif"|"round"|"video"|"audio"|"file", "duration", "w", "h", "thumb", "has_thumb"} | null}` — tin hệ thống: `text` là câu mô tả tiếng Việt
 
 Lỗi chung: `FLOOD_WAIT` (kèm `value` giây), `NETWORK`, `NOT_STARTED`, `BAD_ARGS`, `NO_METHOD`, hoặc tên lỗi RPC của Telegram.
 
@@ -135,6 +137,15 @@ Lỗi chung: `FLOOD_WAIT` (kèm `value` giây), `NETWORK`, `NOT_STARTED`, `BAD_A
 | `outbox.sent` | `local_id`, `peer`, `msg` — tin trong hàng chờ đã gửi |
 | `outbox.failed` | `local_id`, `peer`, `code`, `message` — máy chủ từ chối tin trong hàng chờ |
 | `cache.cleared` | — lõi vừa xoá tệp đệm (tự dọn / `cache.clear`): app quên đường dẫn cũ |
+
+## Chuyển video H.265 → H.264 (đồng bộ, gọi ở hàng đợi nền — app/Core/GMHevcTranscoder.m)
+
+| Hàm | Việc |
+| --- | --- |
+| `void *gm_h265_open(const char *path, int max_short, int fast, char *err, int err_len)` | Mở MP4 H.265; `max_short` = cạnh ngắn tối đa của khung ra; `fast` = bỏ khung không làm tham chiếu (máy một nhân). NULL = lỗi (câu lỗi trong `err`) |
+| `int gm_h265_info(const void *v, GmH265Info *out)` | `{width, height, out_width, out_height, frames, timescale, duration (giây), a, b, c, d (ma trận xoay)}` |
+| `int gm_h265_next(void *v, uint8_t *y, size_t y_stride, uint8_t *uv, size_t uv_stride, int64_t *pts)` | Khung kế tiếp (thứ tự trình chiếu) vào NV12 dải video (CVPixelBuffer 420v); `pts` theo `timescale`, khung đầu = 0. 0 = có khung, 1 = hết, 2 = lỗi |
+| `void gm_h265_close(void *v)` | |
 
 ## Sticker động / video (đồng bộ, gọi ở hàng đợi nền)
 

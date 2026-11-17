@@ -479,6 +479,7 @@ name = "gm-cli"
 version = "0.1.0"
 dependencies = [
  "gm-core",
+ "gm-hevc",
  "gm-lottie",
  "gm-net",
  "gm-opus",
@@ -517,11 +518,19 @@ name = "gm-ffi"
 version = "0.1.0"
 dependencies = [
  "gm-core",
+ "gm-hevc",
  "gm-lottie",
  "gm-net",
  "gm-webm",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "gm-hevc"
+version = "0.1.0"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -565,8 +574,6 @@ dependencies = [
 [[package]]
 name = "grammers-client"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d72e6a294d409c22c860d442bc78894507c0ad066733acc27c5d23fed8ef9bb"
 dependencies = [
  "futures-util",
  "grammers-crypto",

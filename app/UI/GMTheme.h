@@ -63,6 +63,9 @@ typedef NS_ENUM(NSInteger, GMThemeMode) { GMThemeLight, GMThemeDark, GMThemeAuto
 + (UIColor *)colorFor:(NSString *)peer;
 /// Ảnh đại diện tạm: chữ cái đầu trên nền tròn màu (có bộ đệm).
 + (UIImage *)avatarFor:(NSString *)peer name:(NSString *)name size:(CGFloat)size;
+/// Biểu tượng chủ đề diễn đàn: chữ cái đầu của tên trên nền tròn màu `rgb` (icon_color của Telegram; 0 = xám). Biểu tượng
+/// emoji riêng (icon_emoji_id) chưa vẽ — dùng chữ cái.
++ (UIImage *)topicIcon:(NSString *)title color:(NSInteger)rgb size:(CGFloat)size;
 /// Cắt ảnh thành hình tròn cỡ `size` pt (ảnh đại diện vừa đổi).
 + (UIImage *)roundImage:(UIImage *)img size:(CGFloat)size;
 /// Nền bong bóng co giãn được: tin ra / vào, có đuôi hay không (tin cuối của một cụm mới có đuôi).

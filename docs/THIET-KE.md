@@ -406,6 +406,7 @@ Safari iOS 6.
 ### Sau 1.0
 
 Sticker động (rlottie), nhiều tài khoản, chủ đề diễn đàn (forum topics), bình luận kênh, media đã chia sẻ, emoji bằng ảnh.
+Đã làm: sticker động TGS + video WebM (D26, D27), chủ đề diễn đàn (D28), media đã chia sẻ.
 
 ---
 

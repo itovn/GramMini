@@ -1,6 +1,22 @@
 #import <UIKit/UIKit.h>
 
-/// Danh sách chat: tên, tin cuối, giờ, số chưa đọc. Chạm → màn chat.
+#define GMDialogRowH 72
+#define GMDialogAvatar 54
+
+/// Ô một chat (kiểu Telegram 4.9): ảnh đại diện tròn, tên, giờ + dấu đã đọc, xem trước, số chưa đọc / ghim, vạch kẻ thụt.
+/// Các ô ghép thành một thẻ kính lề 8 pt (hàng đầu / cuối bo góc). Cao GMDialogRowH, ảnh GMDialogAvatar. Dùng cả cho danh sách
+/// chủ đề của nhóm diễn đàn.
+@interface GMDialogCell : UITableViewCell
+@property (nonatomic, strong) UIImageView *avatar, *badgeBg;
+@property (nonatomic) BOOL first, last;
+@property (nonatomic, strong) UILabel *name, *time, *check, *sender, *preview, *badge, *pin;
+@property (nonatomic, strong) UIView *line;
+@property (nonatomic, copy) NSString *peerKey;  // ô đang hiện chat nào (ô dùng lại)
+/// Hàng đầu / cuối của thẻ (bo góc trên / dưới).
+- (void)setFirst:(BOOL)first last:(BOOL)last;
+@end
+
+/// Danh sách chat: tên, tin cuối, giờ, số chưa đọc. Chạm → màn chat (nhóm có chủ đề → danh sách chủ đề).
 @interface GMChatListViewController : UITableViewController
 @property (nonatomic, copy) NSString *myId;
 /// Chưa đăng nhập (đóng màn đăng nhập): hiện «Chưa đăng nhập» + nút «Đăng nhập».

@@ -1,0 +1,11 @@
+[package]
+name = "gm-hevc"
+description = "GramMini: giải mã video H.265 (HEVC) — đọc MP4 bằng Rust, giải mã bằng FFmpeg (vendor/ffmpeg, dựng bằng cc), thu nhỏ ra NV12 để iOS mã lại H.264"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+links = "ffhevc"
+
+[build-dependencies]
+cc = "1"

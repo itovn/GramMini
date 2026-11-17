@@ -1,12 +1,14 @@
 #import "GMFiles.h"
 #import "GMCore.h"
 #import "GMLog.h"
+#import "GMHevcTranscoder.h"
 
 NSString *const GMFileStateNotification = @"GMFileState";
 
 @implementation GMFiles {
     NSMutableDictionary *_paths;     // khoá → đường dẫn
-    NSMutableDictionary *_progress;  // khoá → tiến độ (đang tải)
+    NSMutableDictionary *_progress;  // khoá → tiến độ (đang tải / đang chuyển H.265)
+    NSMutableDictionary *_converting;  // khoá → GMHevcTranscoder đang chạy
 }
 
 + (instancetype)shared {
@@ -93,28 +95,71 @@ static NSString *GMFileKey(NSString *peer, id msgId) {
 }
 
 - (void)fetch:(NSString *)peer msg:(NSNumber *)msgId done:(void (^)(NSString *))done {
-    NSString *key = GMFileKey(peer, msgId);
     NSString *have = [self pathFor:peer msg:msgId];
     if (have) {
         GMTouchFile(have);
         done(have);
         return;
     }
+    [self load:peer msg:msgId video:NO done:^(NSString *path, BOOL hevc) { done(path); }];
+}
+
+- (void)fetchVideo:(NSString *)peer msg:(NSNumber *)msgId done:(void (^)(NSString *, BOOL))done {
+    // Video mình vừa gửi từ máy (nhớ đường dẫn gốc, ngoài thư mục media — đã nén H.264): mở thẳng
+    NSString *have = [self pathFor:peer msg:msgId];
+    if (have && ![have hasPrefix:[GMDataDir() stringByAppendingPathComponent:@"media"]]) {
+        done(have, NO);
+        return;
+    }
+    [self load:peer msg:msgId video:YES done:done];
+}
+
+- (BOOL)isConverting:(NSString *)peer msg:(NSNumber *)msgId {
+    return [_converting objectForKey:GMFileKey(peer, msgId)] != nil;
+}
+
+- (void)convertVideo:(NSString *)path peer:(NSString *)peer msg:(NSNumber *)msgId done:(void (^)(NSString *, NSString *))done {
+    NSString *key = GMFileKey(peer, msgId);
+    if (!_converting) _converting = [NSMutableDictionary dictionary];
+    if ([_converting objectForKey:key] || [_progress objectForKey:key]) return;
+    [_progress setObject:@0 forKey:key];
+    [self notify];
+    // Ghi đè chính tệp gốc (ghi ra tệp tạm, xong mới thay) — lần sau mở là H.264, phát ngay
+    GMHevcTranscoder *t = [GMHevcTranscoder transcode:path to:path progress:^(double f) {
+        [_progress setObject:@(f) forKey:key];
+        [self notify];
+    } done:^(BOOL ok, NSString *err) {
+        [_converting removeObjectForKey:key];
+        [_progress removeObjectForKey:key];
+        if (ok) {
+            [_paths setObject:path forKey:key];
+        } else {
+            GMLog(@"chuyển H.265 lỗi: %@", err);
+        }
+        [self notify];
+        done(ok ? path : nil, err);
+    }];
+    [_converting setObject:t forKey:key];
+}
+
+- (void)load:(NSString *)peer msg:(NSNumber *)msgId video:(BOOL)video done:(void (^)(NSString *, BOOL))done {
+    NSString *key = GMFileKey(peer, msgId);
     if ([_progress objectForKey:key]) return;  // đang tải
     [_progress setObject:@0 forKey:key];
     [self notify];
     long long t = GMNowMs();
-    [GMCore call:@"media.document" args:@{@"peer": peer, @"id": msgId} done:^(id ok, NSDictionary *err) {
+    [GMCore call:@"media.document" args:@{@"peer": peer, @"id": msgId, @"video": @(video)} done:^(id ok, NSDictionary *err) {
         [_progress removeObjectForKey:key];
         NSString *path = err ? nil : [ok objectForKey:@"path"];
+        BOOL hevc = [[ok objectForKey:@"hevc"] boolValue];
         if (path) {
             [_paths setObject:path forKey:key];
-            GMLog(@"tải tệp xong sau %lld ms", GMNowMs() - t);
+            GMLog(@"tải tệp xong sau %lld ms%@", GMNowMs() - t, hevc ? @" (video H.265)" : @"");
         } else {
             GMLog(@"tải tệp lỗi: %@", [err objectForKey:@"code"]);
         }
         [self notify];
-        done(path);
+        done(path, hevc);
     }];
 }
 

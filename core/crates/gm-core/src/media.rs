@@ -85,6 +85,102 @@ pub fn document_loc(d: &Document) -> Option<Loc> {
     Some(Loc { loc: d.to_raw_input_location()?, dc: d.dc_id(), size: d.size() })
 }
 
+/// Mã hình + kích thước của một document video (`video_codec`: Telegram ghi cho các bản tự chuyển; tệp gốc thường không có).
+fn video_info(doc: &tl::types::Document) -> Option<(Option<String>, i32, i32)> {
+    doc.attributes.iter().find_map(|a| match a {
+        tl::enums::DocumentAttribute::Video(v) => Some((v.video_codec.clone(), v.w, v.h)),
+        _ => None,
+    })
+}
+
+fn is_h264(codec: &str) -> bool {
+    let c = codec.to_ascii_lowercase();
+    c == "h264" || c.starts_with("avc")
+}
+
+/// Bản H.264 của video để iOS 5 / 6 phát được hình (máy chỉ giải H.264; tệp gốc quay bằng máy mới hay là H.265 → chỉ có tiếng):
+/// Telegram tự chuyển video sang vài mức chất lượng (`alt_documents`, có `video_codec`). Chọn bản H.264 có cạnh ngắn cao nhất
+/// không quá `max_side` điểm (không có thì bản nhỏ nhất). Tệp gốc ghi rõ H.264, hoặc không có bản H.264 nào → None (dùng tệp gốc).
+/// Trả (vị trí, rộng, cao).
+pub fn h264_alt(d: &Document, max_side: i32) -> Option<(Loc, i32, i32)> {
+    if let Some(tl::enums::Document::Document(doc)) = d.raw.document.as_ref() {
+        if video_info(doc).and_then(|v| v.0).is_some_and(|c| is_h264(&c)) {
+            return None;
+        }
+    }
+    let mut alts: Vec<(&tl::types::Document, i32, i32)> = d
+        .raw
+        .alt_documents
+        .as_ref()?
+        .iter()
+        .filter_map(|x| {
+            let tl::enums::Document::Document(doc) = x else { return None };
+            let (codec, w, h) = video_info(doc)?;
+            codec.is_some_and(|c| is_h264(&c)).then_some((doc, w, h))
+        })
+        .collect();
+    alts.sort_by_key(|(_, w, h)| (*w).min(*h));
+    let &(doc, w, h) = alts.iter().rev().find(|(_, w, h)| (*w).min(*h) <= max_side).or(alts.first())?;
+    let loc = tl::enums::InputFileLocation::InputDocumentFileLocation(tl::types::InputDocumentFileLocation {
+        id: doc.id,
+        access_hash: doc.access_hash,
+        file_reference: doc.file_reference.clone(),
+        thumb_size: String::new(),
+    });
+    Some((Loc { loc, dc: Some(doc.dc_id), size: Some(doc.size.max(0) as usize) }, w, h))
+}
+
+/// Mô tả tệp gốc + các bản Telegram tự chuyển của video (mã hình, cỡ, dung lượng) — ghi nhật ký khi không có bản H.264.
+pub fn video_variants(d: &Document) -> String {
+    let one = |x: &tl::enums::Document| match x {
+        tl::enums::Document::Document(doc) => {
+            let (c, w, h) = video_info(doc).unwrap_or((None, 0, 0));
+            format!("{} {w}×{h} {} KB", c.as_deref().unwrap_or("?"), doc.size / 1024)
+        }
+        tl::enums::Document::Empty(_) => "trống".into(),
+    };
+    let main = d.raw.document.as_ref().map(one).unwrap_or_default();
+    let alts: Vec<String> = d.raw.alt_documents.iter().flatten().map(one).collect();
+    format!("gốc: {main}; bản khác: [{}]", alts.join(", "))
+}
+
+/// Video MP4 / MOV mã H.265 (HEVC — iOS 5 / 6 không giải được hình, chỉ phát tiếng): tìm `hvc1` / `hev1` (mục mô tả mẫu) trong
+/// hộp `moov`. Đọc lần theo các hộp cấp đầu, không đọc cả tệp.
+pub fn is_hevc_file(path: &std::path::Path) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(path) else { return false };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut pos = 0u64;
+    while pos + 8 <= len {
+        let mut h = [0u8; 16];
+        if f.seek(SeekFrom::Start(pos)).is_err() || f.read_exact(&mut h[..8]).is_err() {
+            return false;
+        }
+        let (mut size, mut hdr) = (u32::from_be_bytes([h[0], h[1], h[2], h[3]]) as u64, 8u64);
+        if size == 1 {
+            if f.read_exact(&mut h[8..16]).is_err() {
+                return false;
+            }
+            size = u64::from_be_bytes([h[8], h[9], h[10], h[11], h[12], h[13], h[14], h[15]]);
+            hdr = 16;
+        } else if size == 0 {
+            size = len - pos;
+        }
+        if size < hdr {
+            return false;
+        }
+        if &h[4..8] == b"moov" {
+            let mut buf = vec![0u8; (size - hdr).min(16 << 20) as usize];
+            if f.read_exact(&mut buf).is_err() {
+                return false;
+            }
+            return buf.windows(4).any(|w| w == b"hvc1" || w == b"hev1");
+        }
+        pos = pos.saturating_add(size);
+    }
+    false
+}
+
 /// Thuộc tính video (thời lượng, kích thước, tròn) của document.
 pub fn video_attr(d: &Document) -> Option<tl::types::DocumentAttributeVideo> {
     let tl::enums::Document::Document(doc) = d.raw.document.as_ref()? else { return None };

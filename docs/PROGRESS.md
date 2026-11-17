@@ -265,3 +265,18 @@
 - Tin tệp không chú thích: giờ (+ dấu đã đọc) đè lên dòng «cỡ · chạm để mở» trên iPhone (bong bóng tệp 220 điểm không đủ chỗ
   cho cả hai trên một hàng) → giờ xuống dòng riêng dưới dòng đó (bong bóng cao thêm 10 điểm). iPhone 5: kiểm trên tin tệp có sẵn
   trong Tin nhắn đã lưu — đạt.
+
+### Sau 1.2.1 — chủ đề diễn đàn, video H.265 (17/11/2026)
+
+- Nhóm có chủ đề (D28): danh sách chủ đề, màn từng chủ đề, «Tất cả»; bỏ trích dẫn giả «Tin nhắn …» ở tin trong chủ đề; tin
+  sửa chủ đề. iPhone 5 (nhóm anh cho phép, chỉ xem, không đánh dấu đã đọc): 17 chủ đề tải 280–560 ms, chủ đề 20 tin 167 ms,
+  General 126 ms — đạt. Chưa gửi tin vào chủ đề trên tài khoản chính.
+- Video H.265 (D29): có bản H.264 Telegram đã chuyển thì phát bản đó; không có thì báo chỉ phát được tiếng. Video anh gặp:
+  không có bản H.264 → app báo.
+
+### Bản 1.3.0 — chủ đề diễn đàn, video H.265 có hình (17/11/2026)
+
+- Video H.265 không có bản H.264 trên máy chủ (D30): chuyển sang H.264 trên máy bằng FFmpeg (NEON) + bộ mã H.264 phần cứng.
+  iPhone 5: video 1080 × 1920, 200 giây (video anh gặp ở một nhóm của anh) chuyển trong 222 giây (27 khung / giây), tệp ra
+  H.264 + AAC 480 × 854; iPad 1: 1019 giây → bật bỏ khung không làm tham chiếu (máy một nhân) 537 giây, video ra ~15 khung / giây,
+  phát có hình. Ký hiệu iOS 5 / iOS 6: 485, thiếu 0.

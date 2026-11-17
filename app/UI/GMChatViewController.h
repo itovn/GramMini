@@ -17,6 +17,13 @@
 /// Ảnh đại diện (khoá ảnh + DC, từ danh sách chat) — hiện bên phải thanh trên; không có thì ảnh chữ cái.
 @property (nonatomic, strong) id photo;
 @property (nonatomic, strong) NSNumber *photoDc;
+/// Nhóm diễn đàn: chỉ hiện / gửi tin của chủ đề này (General = 1); nil = mọi tin của chat. Tiêu đề = tên chủ đề, dòng phụ =
+/// tên nhóm (`groupName`), ảnh bên phải = biểu tượng chủ đề (màu `topicColor`).
+@property (nonatomic, strong) NSNumber *topic;
+@property (nonatomic) NSInteger topicColor;
+@property (nonatomic, copy) NSString *groupName;
+/// Công cụ thử: không đánh dấu đã đọc (xem chat thật mà không đổi trạng thái đọc của tài khoản).
++ (void)setDebugNoRead:(BOOL)on;
 /// Tệp đang xem bằng QuickLook.
 @property (nonatomic, strong) id<QLPreviewItem> previewItem;
 /// Gửi tin (công cụ thử).

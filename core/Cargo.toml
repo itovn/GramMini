@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/gm-net", "crates/gm-opus", "crates/gm-lottie", "crates/gm-webm", "crates/gm-core", "crates/gm-ffi", "crates/gm-cli"]
+members = ["crates/gm-net", "crates/gm-opus", "crates/gm-lottie", "crates/gm-webm", "crates/gm-hevc", "crates/gm-core", "crates/gm-ffi", "crates/gm-cli"]
 
 [workspace.package]
 version = "0.1.0"
@@ -15,9 +15,11 @@ grammers-session = { version = "0.12", default-features = false }
 grammers-tl-types = "0.12"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "time", "io-util", "sync", "macros"] }
 
-# grammers-mtsender vá: cho lõi tự mở kết nối tới DC (MTProxy, SOCKS5…) — xem patches/
+# grammers-mtsender vá: cho lõi tự mở kết nối tới DC (MTProxy, SOCKS5…); grammers-client vá: build_peer_map công khai
+# (chủ đề diễn đàn) — xem patches/
 [patch.crates-io]
 grammers-mtsender = { path = "vendor/grammers-mtsender" }
+grammers-client = { path = "vendor/grammers-client" }
 
 [profile.release]
 panic = "abort"

@@ -299,6 +299,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     NSDictionary *_target;   // tin đang trả lời / sửa
     NSDictionary *_menuMsg;  // tin vừa nhấn giữ
     NSMutableDictionary *_tgsPaths;  // sticker động: khoá ô → tệp .tgs đã tải
+    NSNumber *_topicNext;            // màn chủ đề: offset_id cho trang tin cũ tiếp theo
 }
 
 #pragma mark Dựng
@@ -447,9 +448,11 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     UIButton *av = [UIButton buttonWithType:UIButtonTypeCustom];
     av.frame = CGRectMake(0, 0, 36, 36);
     BOOL saved = [self.peer isEqual:self.myId];
-    [av setImage:[GMTheme avatarFor:self.peer name:saved ? @"★" : (self.title ?: @"") size:36] forState:UIControlStateNormal];
+    [av setImage:self.topic ? [GMTheme topicIcon:self.title color:self.topicColor size:36]
+                            : [GMTheme avatarFor:self.peer name:saved ? @"★" : (self.title ?: @"") size:36]
+        forState:UIControlStateNormal];
     [av addTarget:self action:@selector(showInfo) forControlEvents:UIControlEventTouchUpInside];
-    if (!saved && self.photo) {
+    if (!saved && self.photo && !self.topic) {
         __weak UIButton *wb = av;
         [GMImages avatarForPeer:self.peer photo:[self.photo description] dc:self.photoDc size:36 done:^(UIImage *img) {
             if (img) [wb setImage:img forState:UIControlStateNormal];
@@ -532,7 +535,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     i.peer = self.peer;
     i.kind = self.kind;
     i.myId = self.myId;
-    i.name = self.title;
+    i.name = self.topic ? self.groupName : self.title;
     [self.navigationController pushViewController:i animated:YES];
 }
 
@@ -585,6 +588,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     if (reply) [self setCompose:GMComposeNormal target:nil];
     NSMutableDictionary *a = [@{@"peer": self.peer, @"doc": GMVal(doc, @"doc")} mutableCopy];
     if (reply) [a setObject:reply forKey:@"reply_to"];
+    if (self.topic) [a setObject:self.topic forKey:@"topic"];
     long long t0 = GMNowMs();
     [GMCore call:@"messages.sendDoc" args:a done:^(id ok, NSDictionary *err) {
         if (err) {
@@ -618,6 +622,10 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
 
 - (void)loadStatus {
     if ([self isSaved]) return;  // Tin nhắn đã lưu: không có dòng phụ
+    if (self.topic) {
+        _titleView.subtitle = self.groupName;  // chủ đề: dòng phụ là tên nhóm
+        return;
+    }
     [GMCore call:@"chat.status" args:@{@"peer": self.peer} done:^(id ok, NSDictionary *err) {
         if (!ok) return;
         _status = ok;
@@ -659,13 +667,35 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
 #pragma mark Dữ liệu
 
 - (void)becameActive {
-    if (self.navigationController.topViewController == self) {
-        [GMCore call:@"messages.read" args:@{@"peer": self.peer} done:nil];
-    }
+    if (self.navigationController.topViewController == self) [self markRead];
 }
 
 - (BOOL)isSaved {
     return [self.peer isEqual:self.myId];
+}
+
+static BOOL gDebugNoRead;
+
++ (void)setDebugNoRead:(BOOL)on {
+    gDebugNoRead = on;
+}
+
+/// Đánh dấu đã đọc: cả chat; ở một chủ đề diễn đàn thì chỉ chủ đề đó, tới tin mới nhất đã tải.
+- (void)markRead {
+    if (gDebugNoRead) return;
+    if (!self.topic) {
+        [GMCore call:@"messages.read" args:@{@"peer": self.peer} done:nil];
+        return;
+    }
+    long long max = 0;
+    for (NSDictionary *m in _msgs) max = MAX(max, [GMVal(m, @"id") longLongValue]);
+    if (max <= 0) return;
+    [GMCore call:@"messages.read" args:@{@"peer": self.peer, @"topic": self.topic, @"max_id": @(max)} done:nil];
+}
+
+/// Tin thuộc màn này: mọi tin của chat, hoặc ở màn một chủ đề thì chỉ tin của chủ đề đó (không thuộc chủ đề nào = General, 1).
+- (BOOL)inTopic:(NSDictionary *)m {
+    return !self.topic || [(GMVal(m, @"topic") ?: @1) isEqual:self.topic];
 }
 
 - (BOOL)outgoing:(NSDictionary *)m {
@@ -717,7 +747,13 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     [_spin startAnimating];
     NSDictionary *oldest = _msgs.firstObject;
     NSMutableDictionary *args = [@{@"peer": self.peer, @"limit": @40} mutableCopy];
-    if (oldest) [args setObject:GMVal(oldest, @"id") forKey:@"offset_id"];
+    if (self.topic) {
+        // Chủ đề: lõi trả {msgs, more, next} — `next` là mốc trang sau (General lọc từ lịch sử nhóm: mốc có thể không phải tin đã hiện)
+        [args setObject:self.topic forKey:@"topic"];
+        if (_topicNext) [args setObject:_topicNext forKey:@"offset_id"];
+    } else if (oldest) {
+        [args setObject:GMVal(oldest, @"id") forKey:@"offset_id"];
+    }
     long long t = GMNowMs();
     [GMCore call:@"messages.history" args:args done:^(id ok, NSDictionary *err) {
         _loading = NO;
@@ -726,9 +762,19 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
             GMLog(@"tải tin lỗi: %@", GMVal(err, @"code"));
             return;
         }
-        NSArray *page = ok;  // mới → cũ
+        NSArray *page = self.topic ? GMVal(ok, @"msgs") : ok;  // mới → cũ
         GMLog(@"tải %lu tin, %lld ms", (unsigned long)page.count, GMNowMs() - t);
-        if (page.count < 40) _noMore = YES;
+        if (self.topic) {
+            if (![GMVal(ok, @"more") boolValue] || !GMVal(ok, @"next")) _noMore = YES;
+            _topicNext = GMVal(ok, @"next");
+            // General lọc từ lịch sử: trang có thể trống mà vẫn còn tin cũ hơn → tải tiếp
+            if (!page.count && !_noMore) {
+                dispatch_async(dispatch_get_main_queue(), ^{ [self loadOlder]; });
+                return;
+            }
+        } else if (page.count < 40) {
+            _noMore = YES;
+        }
         if (!page.count) return;
         BOOL first = _msgs.count == 0;
         CGFloat before = _table.contentSize.height;
@@ -742,9 +788,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
         if (first) {
             [self scrollToBottom:NO];
             // App ở nền (vd mở chat từ thông báo chưa xong): chưa tính là đã đọc — quay lại app mới đánh dấu
-            if ([UIApplication sharedApplication].applicationState == UIApplicationStateActive) {
-                [GMCore call:@"messages.read" args:@{@"peer": self.peer} done:nil];
-            }
+            if ([UIApplication sharedApplication].applicationState == UIApplicationStateActive) [self markRead];
         } else {
             // Giữ nguyên chỗ đang xem khi chèn tin cũ lên đầu
             [_table layoutIfNeeded];
@@ -820,6 +864,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     NSString *e = GMVal(ev, @"e");
     NSDictionary *m = GMVal(ev, @"msg");
     if ([e isEqual:@"typing"] && [GMVal(ev, @"peer") isEqual:self.peer] && ![GMVal(ev, @"from") isEqual:self.myId]) {
+        if (self.topic) return;  // không biết đang gõ ở chủ đề nào — dòng phụ giữ tên nhóm
         [self showTyping:ev];
         return;
     }
@@ -846,11 +891,11 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
         }
         return;
     }
-    if ([e isEqual:@"msg.new"] && [GMVal(m, @"peer") isEqual:self.peer]) {
+    if ([e isEqual:@"msg.new"] && [GMVal(m, @"peer") isEqual:self.peer] && [self inTopic:m]) {
         [self append:m];
         // Ở nền (đang mở chat này rồi bấm Home): chưa tính là đã đọc — quay lại app mới đánh dấu
         if (![GMVal(m, @"out") boolValue] && [UIApplication sharedApplication].applicationState == UIApplicationStateActive) {
-            [GMCore call:@"messages.read" args:@{@"peer": self.peer} done:nil];
+            [self markRead];
         }
     } else if ([e isEqual:@"msg.edit"] && [GMVal(m, @"peer") isEqual:self.peer]) {
         NSInteger i = [self indexOf:GMVal(m, @"id")];
@@ -1007,6 +1052,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     if (reply) [self setCompose:GMComposeNormal target:nil];
     NSMutableDictionary *args = [@{@"peer": self.peer, @"path": path} mutableCopy];
     if (reply) [args setObject:reply forKey:@"reply_to"];
+    if (self.topic) [args setObject:self.topic forKey:@"topic"];
     long long t0 = GMNowMs();
     [GMCore call:@"messages.sendVoice" args:args done:^(id ok, NSDictionary *err) {
         if (err) {
@@ -1057,9 +1103,11 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     NSMutableDictionary *pending = [@{@"id": tmp, @"peer": self.peer, @"text": text, @"out": @YES, @"pending": @YES,
                                       @"date": @((long long)[[NSDate date] timeIntervalSince1970])} mutableCopy];
     if (reply) [pending setObject:reply forKey:@"reply_to"];
+    if (self.topic) [pending setObject:self.topic forKey:@"topic"];
     [self append:pending];
     NSMutableDictionary *args = [@{@"peer": self.peer, @"text": text, @"queue": @YES} mutableCopy];
     if (reply) [args setObject:reply forKey:@"reply_to"];
+    if (self.topic) [args setObject:self.topic forKey:@"topic"];
     [GMCore call:@"messages.send" args:args done:^(id ok, NSDictionary *err) {
         if (err) {
             GMLog(@"gửi tin lỗi: %@", GMVal(err, @"code"));
@@ -1115,6 +1163,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     [GMCore call:@"outbox.list" args:@{@"peer": self.peer} done:^(id ok, NSDictionary *err) {
         if (![ok isKindOfClass:[NSArray class]]) return;
         for (NSDictionary *it in ok) {
+            if (![self inTopic:it]) continue;
             NSMutableDictionary *m = [it mutableCopy];
             [m setObject:GMVal(it, @"local_id") forKey:@"id"];
             [m setObject:@YES forKey:@"out"];
@@ -1242,7 +1291,7 @@ static NSString *GMSize(double b) {
 - (void)openDoc:(NSDictionary *)m {
     NSString *kind = GMVal(GMVal(m, @"doc"), @"kind");
     __weak GMChatViewController *ws = self;
-    [[GMFiles shared] fetch:self.peer msg:GMVal(m, @"id") done:^(NSString *path) {
+    void (^open)(NSString *, BOOL) = ^(NSString *path, BOOL hevc) {
         if (!path) {
             [GMTheme toast:@"Không tải được tệp" in:ws.view];
             return;
@@ -1263,6 +1312,41 @@ static NSString *GMSize(double b) {
             QLPreviewController *q = [[QLPreviewController alloc] init];
             q.dataSource = ws;
             [ws presentViewController:q animated:YES completion:nil];
+        }
+    };
+    // Video: lõi chọn bản H.264; tệp gốc H.265 (iOS 5 / 6 chỉ có tiếng) mà không có bản H.264 → chuyển trên máy rồi phát
+    if ([kind isEqual:@"video"] || [kind isEqual:@"round"]) {
+        GMFiles *f = [GMFiles shared];
+        if ([f isConverting:self.peer msg:GMVal(m, @"id")]) {
+            [GMTheme toast:[NSString stringWithFormat:@"Đang chuyển video cho máy phát được hình — %.0f%%",
+                                                      MAX(0, [f progressOf:self.peer msg:GMVal(m, @"id")]) * 100] in:self.view];
+            return;
+        }
+        [f fetchVideo:self.peer msg:GMVal(m, @"id") done:^(NSString *path, BOOL hevc) {
+            if (path && hevc) [ws convertVideo:m path:path then:^(NSString *p) { open(p, NO); }];
+            else open(path, NO);
+        }];
+    } else {
+        [[GMFiles shared] fetch:self.peer msg:GMVal(m, @"id") done:^(NSString *path) { open(path, NO); }];
+    }
+}
+
+/// Video H.265: chuyển sang H.264 trên máy (chỉ lần đầu — xong thì thay tệp trong bộ đệm), xong mà còn ở màn này thì phát.
+- (void)convertVideo:(NSDictionary *)m path:(NSString *)path then:(void (^)(NSString *path))play {
+    [GMTheme toast:@"Video mã H.265: đang chuyển để máy phát được hình (chỉ lần đầu; video dài mất vài phút)" in:self.view];
+    __weak GMChatViewController *ws = self;
+    [[GMFiles shared] convertVideo:path peer:self.peer msg:GMVal(m, @"id") done:^(NSString *np, NSString *err) {
+        GMChatViewController *s = ws;
+        if (!s) return;
+        if (!np) {
+            [GMTheme toast:[@"Không chuyển được video: " stringByAppendingString:err ?: @""] in:s.view];
+            return;
+        }
+        if (s.navigationController.topViewController == s &&
+            [UIApplication sharedApplication].applicationState == UIApplicationStateActive) {
+            play(np);
+        } else {
+            [GMTheme toast:@"Đã chuyển xong video — chạm để xem" in:s.view];
         }
     }];
 }
@@ -1386,6 +1470,7 @@ static const unsigned char kGMBOM[3] = {0xEF, 0xBB, 0xBF};
     if (reply) [self setCompose:GMComposeNormal target:nil];
     NSMutableDictionary *args = [@{@"peer": self.peer, @"path": path} mutableCopy];
     if (reply) [args setObject:reply forKey:@"reply_to"];
+    if (self.topic) [args setObject:self.topic forKey:@"topic"];
     long long t0 = GMNowMs();
     [GMCore call:@"messages.sendPhoto" args:args done:^(id ok, NSDictionary *err) {
         if (err) {
@@ -1474,6 +1559,7 @@ static NSString *GMMimeFor(NSString *path) {
     if (mime) [a setObject:mime forKey:@"mime"];
     if (video) [a setObject:video forKey:@"video"];
     if (reply) [a setObject:reply forKey:@"reply_to"];
+    if (self.topic) [a setObject:self.topic forKey:@"topic"];
     _upTag = tag;
     _upName = video ? @"video" : [NSString stringWithFormat:@"«%@»", name];
     [self showUpload:[NSString stringWithFormat:@"Đang gửi %@…", _upName] progress:0];

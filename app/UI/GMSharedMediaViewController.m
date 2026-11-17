@@ -181,10 +181,33 @@ static const NSInteger kCols = 4;
     }
     // Video: tải (có rồi thì mở ngay) rồi phát
     [GMTheme toast:@"Đang mở video…" in:self.navigationController.view];
-    [[GMFiles shared] fetch:self.peer msg:GMVal(m, @"id") done:^(NSString *path) {
-        if (!path) return;
+    GMFiles *files = [GMFiles shared];
+    if ([files isConverting:self.peer msg:GMVal(m, @"id")]) {
+        [GMTheme toast:[NSString stringWithFormat:@"Đang chuyển video cho máy phát được hình — %.0f%%",
+                                                  MAX(0, [files progressOf:self.peer msg:GMVal(m, @"id")]) * 100] in:self.navigationController.view];
+        return;
+    }
+    __weak GMSharedMediaViewController *ws = self;
+    void (^play)(NSString *) = ^(NSString *path) {
         MPMoviePlayerViewController *mp = [[MPMoviePlayerViewController alloc] initWithContentURL:[NSURL fileURLWithPath:path]];
-        [self presentMoviePlayerViewControllerAnimated:mp];
+        [ws presentMoviePlayerViewControllerAnimated:mp];
+    };
+    [files fetchVideo:self.peer msg:GMVal(m, @"id") done:^(NSString *path, BOOL hevc) {
+        if (!path) return;
+        if (!hevc) {
+            play(path);
+            return;
+        }
+        // H.265 (iOS 5 / 6 chỉ phát tiếng): chuyển sang H.264 trên máy rồi phát
+        [GMTheme toast:@"Video mã H.265: đang chuyển để máy phát được hình (chỉ lần đầu; video dài mất vài phút)"
+                    in:ws.navigationController.view];
+        [files convertVideo:path peer:ws.peer msg:GMVal(m, @"id") done:^(NSString *np, NSString *err) {
+            if (!np) {
+                [GMTheme toast:[@"Không chuyển được video: " stringByAppendingString:err ?: @""] in:ws.navigationController.view];
+            } else if (ws.navigationController.topViewController == ws) {
+                play(np);
+            }
+        }];
     }];
 }
 

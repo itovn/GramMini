@@ -371,6 +371,8 @@ static UIImage *GMTabSelection(void) {
     return cache[i];
 }
 
+static UIImage *GMCircleIcon(UIColor *color, NSString *ini, CGFloat size);
+
 + (UIImage *)avatarFor:(NSString *)peer name:(NSString *)name size:(CGFloat)size {
     static NSCache *cache;
     if (!cache) cache = [[NSCache alloc] init];
@@ -388,8 +390,14 @@ static UIImage *GMTabSelection(void) {
         if (ini.length >= 2) break;
     }
     if (!ini.length && name.length) [ini appendString:[name substringWithRange:[name rangeOfComposedCharacterSequenceAtIndex:0]]];
-    UIColor *color = [self colorFor:peer];
-    img = GMDraw(CGSizeMake(size, size), ^(CGContextRef ctx) {
+    img = GMCircleIcon([self colorFor:peer], ini, size);
+    [cache setObject:img forKey:key];
+    return img;
+}
+
+/// Vòng tròn màu kiểu kính (bóng nửa trên, tối nhẹ phía đáy) + chữ trắng ở giữa — ảnh chữ cái, biểu tượng chủ đề.
+static UIImage *GMCircleIcon(UIColor *color, NSString *ini, CGFloat size) {
+    return GMDraw(CGSizeMake(size, size), ^(CGContextRef ctx) {
         UIBezierPath *circle = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(0, 0, size, size)];
         [color setFill];
         [circle fill];
@@ -407,6 +415,26 @@ static UIImage *GMTabSelection(void) {
         [[UIColor whiteColor] set];
         [ini drawAtPoint:at withFont:f];
     });
+}
+
++ (UIImage *)topicIcon:(NSString *)title color:(NSInteger)rgb size:(CGFloat)size {
+    static NSCache *cache;
+    if (!cache) cache = [[NSCache alloc] init];
+    NSString *key = [NSString stringWithFormat:@"%@|%ld|%.0f", title, (long)rgb, size];
+    UIImage *img = [cache objectForKey:key];
+    if (img) return img;
+    // Chữ cái đầu của tên (bỏ biểu tượng / dấu ở đầu); không có thì «#»
+    NSString *ini = @"#";
+    for (NSUInteger i = 0; i < title.length;) {
+        NSRange r = [title rangeOfComposedCharacterSequenceAtIndex:i];
+        NSString *c = [title substringWithRange:r];
+        if ([c rangeOfCharacterFromSet:[NSCharacterSet alphanumericCharacterSet]].location != NSNotFound) {
+            ini = c.uppercaseString;
+            break;
+        }
+        i = NSMaxRange(r);
+    }
+    img = GMCircleIcon(rgb > 0 ? RGB((int)rgb) : RGB(0x8E9AAB), ini, size);
     [cache setObject:img forKey:key];
     return img;
 }

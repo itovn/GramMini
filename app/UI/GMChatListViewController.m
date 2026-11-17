@@ -12,19 +12,10 @@
 #import "GMTitleView.h"
 #import "GMFoldersViewController.h"
 #import "GMAppDelegate.h"
+#import "GMTopicsViewController.h"
 #import <QuartzCore/QuartzCore.h>
 
-static const CGFloat kRowH = 72, kAvatar = 54, kCard = 8;
-
-/// Ô một chat (kiểu Telegram 4.9): ảnh đại diện tròn, tên, giờ + dấu đã đọc, xem trước, số chưa đọc / ghim, vạch kẻ thụt.
-/// Các ô ghép thành một thẻ kính lề 8 pt (hàng đầu / cuối bo góc).
-@interface GMDialogCell : UITableViewCell
-@property (nonatomic, strong) UIImageView *avatar, *badgeBg;
-@property (nonatomic) BOOL first, last;
-@property (nonatomic, strong) UILabel *name, *time, *check, *sender, *preview, *badge, *pin;
-@property (nonatomic, strong) UIView *line;
-@property (nonatomic, copy) NSString *peerKey;  // ô đang hiện chat nào (ô dùng lại)
-@end
+static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
 
 @implementation GMDialogCell
 
@@ -258,6 +249,11 @@ static const CGFloat kRowH = 72, kAvatar = 54, kCard = 8;
     if (!peer.length) return;
     NSUInteger i = 0;
     NSMutableDictionary *d = [self dialogFor:peer index:&i];
+    // Nhóm có chủ đề: danh sách chủ đề (nhảy tới một tin — kết quả tìm — thì mở màn mọi tin như cũ)
+    if ([(GMVal(d, @"forum") ?: GMVal(item, @"forum")) boolValue] && !msgId) {
+        [self openTopics:peer item:item dialog:d];
+        return;
+    }
     if (d) {
         [d setObject:@0 forKey:@"unread"];
         [[GMBackground shared] updateBadge];
@@ -277,6 +273,37 @@ static const CGFloat kRowH = 72, kAvatar = 54, kCard = 8;
     }
     [self.navigationController popToRootViewControllerAnimated:NO];
     [self.navigationController pushViewController:c animated:YES];
+}
+
+- (void)openTopics:(NSString *)peer item:(NSDictionary *)item dialog:(NSMutableDictionary *)d {
+    GMTopicsViewController *t = [[GMTopicsViewController alloc] initWithStyle:UITableViewStylePlain];
+    t.peer = peer;
+    t.name = GMVal(d, @"name") ?: GMVal(item, @"name") ?: GMVal(item, @"chat_name") ?: @"";
+    t.myId = self.myId;
+    t.photo = GMVal(d, @"photo") ?: GMVal(item, @"photo");
+    t.photoDc = GMVal(d, @"photo_dc") ?: GMVal(item, @"photo_dc");
+    // Số chưa đọc của nhóm = tổng các chủ đề (đọc theo từng chủ đề)
+    __weak GMChatListViewController *ws = self;
+    t.unreadChanged = ^(NSInteger total) {
+        NSMutableDictionary *dd = [ws dialogFor:peer index:NULL];
+        if (!dd || [GMVal(dd, @"unread") integerValue] == total) return;
+        [dd setObject:@(total) forKey:@"unread"];
+        [ws reloadRows];
+        [[GMBackground shared] updateBadge];
+    };
+    if (self.tabBarController.selectedViewController != self.navigationController) {
+        self.tabBarController.selectedViewController = self.navigationController;
+    }
+    [self.navigationController popToRootViewControllerAnimated:NO];
+    [self.navigationController pushViewController:t animated:YES];
+}
+
+/// Đang mở danh sách chủ đề của nhóm này (màn đó tự đếm chưa đọc — danh sách chat không cộng thêm).
+- (BOOL)topicsOpenFor:(NSString *)peer {
+    for (UIViewController *vc in self.navigationController.viewControllers) {
+        if ([vc isKindOfClass:[GMTopicsViewController class]] && [((GMTopicsViewController *)vc).peer isEqual:peer]) return YES;
+    }
+    return NO;
 }
 
 - (void)debugSearch:(NSString *)q {
@@ -340,7 +367,7 @@ static const CGFloat kRowH = 72, kAvatar = 54, kCard = 8;
     GMChatViewController *top = (id)self.navigationController.topViewController;
     BOOL open = [top isKindOfClass:[GMChatViewController class]] && [top.peer isEqual:peer] &&
                 [UIApplication sharedApplication].applicationState == UIApplicationStateActive;
-    if (![GMVal(m, @"out") boolValue] && !open) {
+    if (![GMVal(m, @"out") boolValue] && !open && ![self topicsOpenFor:peer]) {
         [d setObject:@([GMVal(d, @"unread") intValue] + 1) forKey:@"unread"];
     }
     // Đưa lên đầu (sau các chat ghim)
@@ -567,7 +594,7 @@ static const CGFloat kRowH = 72, kAvatar = 54, kCard = 8;
 /// Quay lại app khi đang mở một chat: tin về lúc ở nền coi như đã xem.
 - (void)becameActive {
     GMChatViewController *top = (id)self.navigationController.topViewController;
-    if ([top isKindOfClass:[GMChatViewController class]]) {
+    if ([top isKindOfClass:[GMChatViewController class]] && !top.topic) {
         NSMutableDictionary *d = [self dialogFor:top.peer index:NULL];
         if ([GMVal(d, @"unread") intValue]) {
             [d setObject:@0 forKey:@"unread"];

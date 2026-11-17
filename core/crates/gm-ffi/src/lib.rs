@@ -216,3 +216,95 @@ pub extern "C" fn gm_webm_close(video: *mut c_void) {
         drop(unsafe { Box::from_raw(video as *mut gm_webm::Video) });
     }
 }
+
+/// Thông tin video H.265 cho app (`gm_h265_info`).
+#[repr(C)]
+pub struct GmH265Info {
+    pub width: c_int,
+    pub height: c_int,
+    pub out_width: c_int,
+    pub out_height: c_int,
+    pub frames: c_int,
+    pub timescale: c_int,
+    pub duration: f64,
+    /// Ma trận xoay (a, b, c, d) của rãnh video.
+    pub a: f64,
+    pub b: f64,
+    pub c: f64,
+    pub d: f64,
+}
+
+/// Mở video MP4 H.265 để chuyển sang H.264 (`max_short`: cạnh ngắn tối đa của khung ra). NULL nếu lỗi — câu lỗi (tiếng Việt)
+/// ghi vào `err` (`err_len` byte, có `\0`).
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_h265_open(path: *const c_char, max_short: c_int, fast: c_int, err: *mut c_char, err_len: c_int) -> *mut c_void {
+    // fast ≠ 0: bỏ khung không làm tham chiếu (máy một nhân — ít khung / giây hơn, không nhoè)
+    match gm_hevc::Video::open(std::path::Path::new(&cstr(path)), max_short.clamp(64, 2160) as u32, fast != 0) {
+        Ok(v) => Box::into_raw(Box::new(v)) as *mut c_void,
+        Err(e) => {
+            if !err.is_null() && err_len > 0 {
+                let b = e.as_bytes();
+                let n = b.len().min(err_len as usize - 1);
+                unsafe {
+                    std::ptr::copy_nonoverlapping(b.as_ptr(), err as *mut u8, n);
+                    *err.add(n) = 0;
+                }
+            }
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Thông tin video. Trả 0 nếu được.
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_h265_info(video: *const c_void, out: *mut GmH265Info) -> c_int {
+    let (Some(v), false) = ((unsafe { (video as *const gm_hevc::Video).as_ref() }), out.is_null()) else { return 1 };
+    let i = v.info();
+    unsafe {
+        *out = GmH265Info {
+            width: i.width as c_int,
+            height: i.height as c_int,
+            out_width: i.out_width as c_int,
+            out_height: i.out_height as c_int,
+            frames: i.frames as c_int,
+            timescale: i.timescale as c_int,
+            duration: i.duration as f64 / i.timescale.max(1) as f64,
+            a: i.matrix[0],
+            b: i.matrix[1],
+            c: i.matrix[2],
+            d: i.matrix[3],
+        };
+    }
+    0
+}
+
+/// Giải khung kế tiếp vào bộ đệm NV12 của app (CVPixelBuffer 420v: mặt phẳng Y + UV, mỗi mặt phẳng `*_stride` byte một dòng,
+/// cỡ `out_width × out_height`). `pts`: thời điểm theo `timescale` (khung đầu = 0). Trả 0 = có khung, 1 = hết, 2 = lỗi.
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_h265_next(video: *mut c_void, y: *mut u8, y_stride: usize, uv: *mut u8, uv_stride: usize, pts: *mut i64) -> c_int {
+    let Some(v) = (unsafe { (video as *mut gm_hevc::Video).as_mut() }) else { return 2 };
+    let i = v.info();
+    let (ow, oh) = (i.out_width as usize, i.out_height as usize);
+    if y.is_null() || uv.is_null() || y_stride < ow || uv_stride < ow {
+        return 2;
+    }
+    let ys = unsafe { std::slice::from_raw_parts_mut(y, y_stride * oh) };
+    let uvs = unsafe { std::slice::from_raw_parts_mut(uv, uv_stride * (oh / 2)) };
+    match v.next(ys, y_stride, uvs, uv_stride) {
+        Ok(Some(t)) => {
+            if !pts.is_null() {
+                unsafe { *pts = t };
+            }
+            0
+        }
+        Ok(None) => 1,
+        Err(_) => 2,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_h265_close(video: *mut c_void) {
+    if !video.is_null() {
+        drop(unsafe { Box::from_raw(video as *mut gm_hevc::Video) });
+    }
+}

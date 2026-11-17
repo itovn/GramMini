@@ -335,7 +335,7 @@ impl Core {
     async fn send_text(&self, a: &Value) -> Res {
         let peer = self.peer_ref(a).await?;
         let text = arg_str(a, "text")?;
-        let reply = a.get("reply_to").and_then(Value::as_i64).map(|x| x as i32);
+        let reply = reply_arg(a);
         let mut msg = grammers_client::message::InputMessage::new().text(text).reply_to(reply);
         // Hẹn giờ (Unix giây): máy chủ giữ tin, tới giờ mới gửi (Tin nhắn đã lưu: thành lời nhắc)
         let schedule = a.get("schedule").and_then(Value::as_i64);
@@ -359,6 +359,7 @@ impl Core {
             "peer": arg_str(a, "peer")?,
             "text": arg_str(a, "text")?,
             "reply_to": a.get("reply_to").cloned().unwrap_or(Value::Null),
+            "topic": a.get("topic").cloned().unwrap_or(Value::Null),
             "date": now.as_secs(),
         });
         lock(&self.outbox).push(item.clone());
@@ -569,6 +570,128 @@ impl Core {
 
     /// `chat.info`: màn thông tin chat — như `peer_json` + giới thiệu, tắt tiếng; người: chặn, số nhóm chung; nhóm / kênh:
     /// số thành viên, số đang trực tuyến.
+    /// `topics.list`: chủ đề của nhóm diễn đàn theo thứ tự máy chủ (ghim trước, rồi tin mới nhất) — `q` tìm theo tên; `offset`
+    /// ({date, id, topic} của chủ đề cuối trang trước: ngày tin cuối, mã tin cuối, mã chủ đề) để tải tiếp.
+    async fn topics_list(&self, a: &Value) -> Res {
+        use grammers_client::tl::{enums, functions};
+        let pr = self.peer_ref(a).await?;
+        let limit = a.get("limit").and_then(Value::as_i64).unwrap_or(50).clamp(1, 100) as i32;
+        let off = |k: &str| a.get("offset").and_then(|o| o.get(k)).and_then(Value::as_i64).unwrap_or(0) as i32;
+        let enums::messages::ForumTopics::Topics(r) = self
+            .client
+            .invoke(&functions::messages::GetForumTopics {
+                peer: pr.into(),
+                q: a.get("q").and_then(Value::as_str).filter(|q| !q.is_empty()).map(str::to_string),
+                offset_date: off("date"),
+                offset_id: off("id"),
+                offset_topic: off("topic"),
+                limit,
+            })
+            .await?;
+        let peers = self.client.build_peer_map(r.users, r.chats).await;
+        let last: std::collections::HashMap<i32, Value> = r
+            .messages
+            .into_iter()
+            .map(|m| Message::from_raw(&self.client, m, Some(pr), peers.handle()))
+            .map(|m| (m.id(), msg_json(&m)))
+            .collect();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+        let topics: Vec<Value> = r
+            .topics
+            .into_iter()
+            .filter_map(|t| match t {
+                enums::ForumTopic::Topic(t) => {
+                    let enums::PeerNotifySettings::Settings(ns) = &t.notify_settings;
+                    Some(json!({
+                        "id": t.id,
+                        "title": t.title,
+                        "color": t.icon_color,
+                        "emoji": t.icon_emoji_id.is_some(),
+                        "closed": t.closed,
+                        "pinned": t.pinned,
+                        "hidden": t.hidden,
+                        "date": t.date,
+                        "top": t.top_message,
+                        "unread": t.unread_count,
+                        "mentions": t.unread_mentions_count,
+                        "read_in": t.read_inbox_max_id,
+                        "read_out": t.read_outbox_max_id,
+                        "muted": ns.mute_until.map(|x| x as i64 > now).unwrap_or(false),
+                        "last": last.get(&t.top_message).cloned().unwrap_or(Value::Null),
+                    }))
+                }
+                enums::ForumTopic::Deleted(_) => None,
+            })
+            .collect();
+        self.save_session();
+        Ok(json!({"count": r.count, "topics": topics}))
+    }
+
+    /// Tin của một chủ đề (mới → cũ) bằng `messages.getReplies` (chủ đề = luồng trả lời tin tạo chủ đề; General id 1). Máy chủ không
+    /// nhận General qua getReplies → đọc lịch sử cả nhóm rồi lọc tin không thuộc chủ đề nào (tối đa 5 trang một lần).
+    /// Trả {msgs, more, next}: `next` = offset_id cho trang sau (tin cũ nhất đã xét, có thể không nằm trong `msgs`).
+    async fn topic_history(&self, pr: PeerRef, topic: i32, offset_id: i32, limit: i32) -> Res {
+        use grammers_client::tl::{enums, functions};
+        let r = self
+            .client
+            .invoke(&functions::messages::GetReplies {
+                peer: pr.into(),
+                msg_id: topic,
+                offset_id,
+                offset_date: 0,
+                add_offset: 0,
+                limit,
+                max_id: 0,
+                min_id: 0,
+                hash: 0,
+            })
+            .await;
+        let r = match r {
+            Ok(r) => r,
+            Err(InvocationError::Rpc(e)) if topic == 1 => {
+                self.log(&format!("chủ đề General: getReplies lỗi {} — đọc lịch sử rồi lọc", e.name));
+                return Box::pin(self.general_history(pr, offset_id, limit)).await;
+            }
+            Err(e) => return Err(e.into()),
+        };
+        let (msgs, users, chats) = match r {
+            enums::messages::Messages::Messages(x) => (x.messages, x.users, x.chats),
+            enums::messages::Messages::Slice(x) => (x.messages, x.users, x.chats),
+            enums::messages::Messages::ChannelMessages(x) => (x.messages, x.users, x.chats),
+            enums::messages::Messages::NotModified(_) => (Vec::new(), Vec::new(), Vec::new()),
+        };
+        let peers = self.client.build_peer_map(users, chats).await;
+        let out: Vec<Message> = msgs.into_iter().map(|m| Message::from_raw(&self.client, m, Some(pr), peers.handle())).collect();
+        let next = out.iter().map(Message::id).min();
+        self.save_session();
+        Ok(json!({
+            "msgs": out.iter().map(msg_json).collect::<Vec<_>>(),
+            "more": out.len() as i32 >= limit,
+            "next": next,
+        }))
+    }
+
+    /// Chủ đề General khi getReplies không nhận: lịch sử cả nhóm, giữ tin không thuộc chủ đề nào (xét tối đa 5 × `limit` tin).
+    async fn general_history(&self, pr: PeerRef, offset_id: i32, limit: i32) -> Res {
+        let mut it = self.client.iter_messages(pr).limit(limit as usize * 5);
+        if offset_id > 0 {
+            it = it.offset_id(offset_id);
+        }
+        let (mut out, mut seen, mut next) = (Vec::new(), 0, None);
+        while let Some(m) = it.next().await? {
+            seen += 1;
+            next = Some(m.id());
+            let v = msg_json(&m);
+            if v["topic"].is_null() {
+                out.push(v);
+                if out.len() as i32 >= limit {
+                    break;
+                }
+            }
+        }
+        Ok(json!({"msgs": out, "more": seen >= limit, "next": next}))
+    }
+
     async fn chat_info(&self, a: &Value) -> Res {
         use grammers_client::tl::{enums, functions};
         let pr = self.peer_ref(a).await?;
@@ -1360,6 +1483,8 @@ impl Core {
                         "bot": bot,
                         "archived": archived,
                         "marked_unread": marked,
+                        // Nhóm có chủ đề (diễn đàn): app mở danh sách chủ đề («Tất cả» = xem mọi tin như nhóm thường)
+                        "forum": is_forum(d.peer()),
                         "last": d.last_message.as_ref().map(msg_json),
                     }));
                 }
@@ -1369,6 +1494,10 @@ impl Core {
             "messages.history" => {
                 let peer = self.peer_ref(a).await?;
                 let limit = a.get("limit").and_then(Value::as_u64).unwrap_or(40) as usize;
+                if let Some(topic) = a.get("topic").and_then(Value::as_i64) {
+                    let off = a.get("offset_id").and_then(Value::as_i64).unwrap_or(0) as i32;
+                    return Box::pin(self.topic_history(peer, topic as i32, off, limit as i32)).await;
+                }
                 let mut it = self.client.iter_messages(peer).limit(limit);
                 if let Some(off) = a.get("offset_id").and_then(Value::as_i64).filter(|x| *x > 0) {
                     it = it.offset_id(off as i32);
@@ -1528,12 +1657,20 @@ impl Core {
                 let peer = self.peer_ref(a).await?;
                 let id = a.get("id").and_then(Value::as_i64).ok_or_else(|| CoreError::new("BAD_ARGS", "thiếu «id»"))?;
                 let key = arg_str(a, "peer")?.to_string();
+                // `video`: để phát — tệp H.265 (iOS 5 / 6 chỉ phát tiếng) thì đổi sang bản H.264 Telegram đã chuyển nếu có;
+                // không có thì trả kèm `hevc` để app báo
+                let video = a.get("video").and_then(Value::as_bool).unwrap_or(false);
                 let prefix = format!("d{key}_{id}.");
+                let mut stale_hevc = None;
                 if let Ok(rd) = std::fs::read_dir(self.cfg.data_dir.join("media")) {
                     for e in rd.flatten() {
                         let n = e.file_name().to_string_lossy().to_string();
                         if n.starts_with(&prefix) && !n.ends_with(".part") {
                             crate::cache::touch(&e.path());
+                            if video && crate::media::is_hevc_file(&e.path()) {
+                                stale_hevc = Some(e.path());
+                                break;
+                            }
                             return Ok(json!({"path": e.path()}));
                         }
                     }
@@ -1543,13 +1680,33 @@ impl Core {
                     return Err(CoreError::new("NO_MEDIA", "Tin này không còn tệp."));
                 };
                 let path = self.cfg.data_dir.join("media").join(format!("d{}_{}.{}", key, id, crate::media::file_ext(&d)));
+                if video {
+                    if let Some((alt, w, h)) = crate::media::h264_alt(&d, 720) {
+                        let alt_path = path.with_extension("mp4");
+                        if let Some(p) = &stale_hevc {
+                            let _ = std::fs::remove_file(p);
+                        }
+                        self.log(&format!("video {id}: phát bản H.264 {w}×{h} (tệp gốc không phải H.264)"));
+                        let _permit = self.dl.acquire().await.map_err(|_| CoreError::new("BUSY", "hàng tải đã đóng"))?;
+                        self.download_progress(&alt, &alt_path, &key, id).await?;
+                        return Ok(json!({"path": alt_path}));
+                    }
+                    if let Some(p) = stale_hevc {
+                        self.log(&format!("video {id}: H.265, không có bản H.264 — {}", crate::media::video_variants(&d)));
+                        return Ok(json!({"path": p, "hevc": true}));
+                    }
+                }
                 if self.cache.hit(&path) {
                     return Ok(json!({"path": path}));
                 }
                 let loc = crate::media::document_loc(&d).ok_or_else(|| CoreError::new("NO_MEDIA", "Tệp không tải được."))?;
                 let _permit = self.dl.acquire().await.map_err(|_| CoreError::new("BUSY", "hàng tải đã đóng"))?;
                 self.download_progress(&loc, &path, &key, id).await?;
-                Ok(json!({"path": path}))
+                let hevc = video && crate::media::is_hevc_file(&path);
+                if hevc {
+                    self.log(&format!("video {id}: H.265, không có bản H.264 — {}", crate::media::video_variants(&d)));
+                }
+                Ok(json!({"path": path, "hevc": hevc}))
             }
             "media.thumb" => {
                 let peer = self.peer_ref(a).await?;
@@ -1572,7 +1729,7 @@ impl Core {
                 let file = arg_str(a, "path")?;
                 let name = a.get("name").and_then(Value::as_str);
                 let up = self.upload(file, name, a.get("tag").and_then(Value::as_str)).await?;
-                let reply = a.get("reply_to").and_then(Value::as_i64).map(|x| x as i32);
+                let reply = reply_arg(a);
                 let mut msg = grammers_client::message::InputMessage::new()
                     .text(a.get("caption").and_then(Value::as_str).unwrap_or(""))
                     .document(up)
@@ -1640,7 +1797,7 @@ impl Core {
                 std::fs::write(&ogg_path, &ogg).map_err(|e| CoreError::new("IO", e.to_string()))?;
                 let up = self.client.upload_file(&ogg_path).await.map_err(|e| CoreError::new("IO", e.to_string()))?;
                 let _ = std::fs::remove_file(&ogg_path);
-                let reply = a.get("reply_to").and_then(Value::as_i64).map(|x| x as i32);
+                let reply = reply_arg(a);
                 let msg = grammers_client::message::InputMessage::new()
                     .text("")
                     .document(up)
@@ -1657,7 +1814,7 @@ impl Core {
                 let peer = self.peer_ref(a).await?;
                 let file = arg_str(a, "path")?;
                 let up = self.client.upload_file(file).await.map_err(|e| CoreError::new("IO", format!("Không đọc được ảnh: {e}")))?;
-                let reply = a.get("reply_to").and_then(Value::as_i64).map(|x| x as i32);
+                let reply = reply_arg(a);
                 let caption = a.get("caption").and_then(Value::as_str).unwrap_or("");
                 let msg = grammers_client::message::InputMessage::new().text(caption).photo(up).reply_to(reply);
                 let m = self.client.send_message(peer, msg).await?;
@@ -1693,6 +1850,13 @@ impl Core {
             }
             "messages.read" => {
                 let peer = self.peer_ref(a).await?;
+                if let Some(topic) = a.get("topic").and_then(Value::as_i64) {
+                    // Chủ đề diễn đàn: đọc tới `max_id` trong chủ đề (không đánh dấu cả nhóm)
+                    let max = a.get("max_id").and_then(Value::as_i64).unwrap_or(0) as i32;
+                    use grammers_client::tl::functions::messages::ReadDiscussion;
+                    self.client.invoke(&ReadDiscussion { peer: peer.into(), msg_id: topic as i32, read_max_id: max }).await?;
+                    return Ok(json!({}));
+                }
                 self.client.mark_as_read(peer).await?;
                 Ok(json!({}))
             }
@@ -1775,6 +1939,7 @@ impl Core {
             }
             "messages.search" => Box::pin(self.messages_search(a)).await,
             "chat.info" => Box::pin(self.chat_info(a)).await,
+            "topics.list" => Box::pin(self.topics_list(a)).await,
             "groups.create" => Box::pin(self.group_create(a)).await,
             "groups.delete" => {
                 // Xoá hẳn nhóm thường (chỉ người tạo) — mọi thành viên mất nhóm
@@ -1987,7 +2152,7 @@ impl Core {
                     ttl_seconds: None,
                     query: None,
                 };
-                let reply = a.get("reply_to").and_then(Value::as_i64).map(|x| x as i32);
+                let reply = reply_arg(a);
                 let m = self.client.send_message(pr, grammers_client::message::InputMessage::new().text("").media(media).reply_to(reply)).await?;
                 Ok(msg_json(&m))
             }
@@ -2336,6 +2501,12 @@ fn part_path(path: &std::path::Path) -> std::path::PathBuf {
     path.with_extension(format!("{}.part", N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)))
 }
 
+/// Tin gửi trả lời `reply_to`; không có mà đang ở chủ đề diễn đàn `topic` (≠ General) → trả lời tin tạo chủ đề = gửi vào chủ đề.
+/// Trả lời một tin trong chủ đề thì máy chủ tự xếp vào chủ đề của tin đó.
+fn reply_arg(a: &Value) -> Option<i32> {
+    a.get("reply_to").and_then(Value::as_i64).or_else(|| a.get("topic").and_then(Value::as_i64).filter(|t| *t > 1)).map(|x| x as i32)
+}
+
 fn peer_kind(p: &Peer) -> &'static str {
     match p {
         Peer::User(_) => "user",
@@ -2352,6 +2523,7 @@ fn peer_json(p: &Peer) -> Value {
         "peer": peer_key(p.id()),
         "name": peer_name(p),
         "kind": peer_kind(p),
+        "forum": is_forum(p),
         "username": p.username(),
         "photo": photo,
         "photo_dc": photo_dc,
@@ -2469,7 +2641,8 @@ fn proxy_link(links: &[String]) -> Option<String> {
 fn action_text(m: &Message) -> Option<String> {
     use grammers_client::tl::enums::MessageAction as A;
     let a = m.action()?;
-    let who = m.sender().map(peer_name).unwrap_or_else(|| "Ai đó".into());
+    // Không có người gửi (quản trị viên ẩn danh, tin của kênh / nhóm): tên chat — như Telegram gốc
+    let who = m.sender().or(m.peer()).map(peer_name).unwrap_or_else(|| "Ai đó".into());
     let sender_id = m.sender().and_then(|p| p.id().bare_id());
     Some(match a {
         A::ChatCreate(x) => format!("{who} đã tạo nhóm «{}»", x.title),
@@ -2498,6 +2671,15 @@ fn action_text(m: &Message) -> Option<String> {
         A::SetMessagesTtl(x) if x.period > 0 => format!("{who} đã bật tự xoá tin"),
         A::SetMessagesTtl(_) => format!("{who} đã tắt tự xoá tin"),
         A::TopicCreate(x) => format!("Chủ đề «{}» đã được tạo", x.title),
+        // Sửa chủ đề: đổi tên / đóng / mở lại / ẩn (General) / đổi biểu tượng
+        A::TopicEdit(x) => match (&x.title, x.closed, x.hidden) {
+            (Some(t), _, _) => format!("{who} đã đổi tên chủ đề thành «{t}»"),
+            (None, Some(true), _) => format!("{who} đã đóng chủ đề"),
+            (None, Some(false), _) => format!("{who} đã mở lại chủ đề"),
+            (None, None, Some(true)) => format!("{who} đã ẩn chủ đề"),
+            (None, None, Some(false)) => format!("{who} đã hiện lại chủ đề"),
+            (None, None, None) => format!("{who} đã đổi biểu tượng chủ đề"),
+        },
         A::CustomAction(x) => x.message.clone(),
         _ => "Tin hệ thống".into(),
     })
@@ -2568,6 +2750,39 @@ fn voice_json(m: &Message) -> Value {
     json!({"duration": a.duration, "waveform": a.waveform.as_deref().map(crate::media::unpack_waveform)})
 }
 
+/// Tin được trả lời + chủ đề diễn đàn. Tin trong chủ đề có cờ `forum_topic`: có `reply_to_top_id` → đó là chủ đề, còn
+/// `reply_to_msg_id` là tin được trả lời; không có → `reply_to_msg_id` chính là chủ đề (tin thường trong chủ đề, KHÔNG phải trả
+/// lời — trước đây app hiện thành trích dẫn «Tin nhắn …»). Tin tạo chủ đề: chủ đề = chính nó. Không thuộc chủ đề nào → None
+/// (nhóm diễn đàn: chủ đề General, id 1).
+fn reply_topic(m: &Message) -> (Option<i32>, Option<i32>) {
+    use grammers_client::tl::enums;
+    let (header, service) = match &m.raw {
+        enums::Message::Message(x) => (x.reply_to.as_ref(), false),
+        enums::Message::Service(x) => {
+            if matches!(x.action, enums::MessageAction::TopicCreate(_)) {
+                return (None, Some(x.id));
+            }
+            (x.reply_to.as_ref(), true)
+        }
+        enums::Message::Empty(_) => (None, false),
+    };
+    let Some(enums::MessageReplyHeader::Header(h)) = header else { return (None, None) };
+    let (reply, topic) = match (h.forum_topic, h.reply_to_top_id) {
+        (true, Some(top)) => (h.reply_to_msg_id, Some(top)),
+        (true, None) => (None, h.reply_to_msg_id),
+        (false, _) => (h.reply_to_msg_id, None),
+    };
+    (if service { None } else { reply }, topic)
+}
+
+/// Nhóm có chủ đề (siêu nhóm bật «Chủ đề»).
+fn is_forum(p: &Peer) -> bool {
+    match p {
+        Peer::Group(g) => matches!(&g.raw, grammers_client::tl::enums::Chat::Channel(c) if c.forum),
+        _ => false,
+    }
+}
+
 /// Tin nhắn dạng JSON cho app.
 pub fn msg_json(m: &Message) -> Value {
     if let Some(p) = m.sender() {
@@ -2579,6 +2794,7 @@ pub fn msg_json(m: &Message) -> Value {
     let links = links(m);
     let action = action_text(m);
     let media = m.media().map(|x| media_kind(&x)).filter(|k| *k != "webpage");
+    let (reply_to, topic) = reply_topic(m);
     json!({
         "id": m.id(),
         "peer": peer_key(m.peer_id()),
@@ -2589,7 +2805,8 @@ pub fn msg_json(m: &Message) -> Value {
         "from_id": m.sender().map(|p| peer_key(p.id())),
         "media": media,
         "service": action.is_some(),
-        "reply_to": m.reply_to_message_id(),
+        "reply_to": reply_to,
+        "topic": topic,
         "edited": m.edit_date().is_some(),
         "scheduled": m.from_scheduled(),
         "silent": m.silent(),

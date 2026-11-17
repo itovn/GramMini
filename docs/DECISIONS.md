@@ -308,3 +308,57 @@ Thiết kế đầy đủ: [THIET-KE.md](THIET-KE.md).
   khi hàm trả về; đọc ngay sau đó thấy tệp 0 byte (TGS 15 KB thoát, WebM 200 KB dính) → `download()` tự ghi + flush.
   (2) Hai lệnh cùng tải một tệp (ô chat vẽ lại khi tin vừa gửi) chung tệp tạm `.part` → tệp tạm riêng `.<số>.part`.
   (3) Ô chat dùng lại từ sticker cho dòng ngày / tin hệ thống còn giữ nhãn giờ của sticker → ẩn.
+
+## D28. Chủ đề diễn đàn (forum topics); vá grammers-client — 17/11/2026
+
+- Siêu nhóm bật «Chủ đề»: trước đây app hiện tin của mọi chủ đề lẫn nhau, mỗi tin trong chủ đề còn kèm trích dẫn giả
+  «Tin nhắn …» (grammers `reply_to_message_id()` trả mã chủ đề — tin thường trong chủ đề là «trả lời» tin tạo chủ đề).
+- Lõi: `msg_json` đọc `messageReplyHeader` — cờ `forum_topic`: có `reply_to_top_id` → đó là chủ đề, `reply_to_msg_id` là tin
+  được trả lời thật; không có → `reply_to_msg_id` là chủ đề, KHÔNG phải trả lời. Tin tạo chủ đề: chủ đề = chính nó; không có
+  chủ đề → General (id 1). `topics.list` = `messages.getForumTopics` (+ tin cuối mỗi chủ đề); tin của chủ đề =
+  `messages.getReplies(msg_id = chủ đề)` — General (1) máy chủ cũng nhận (đo: 126 ms; lỗi thì lõi lọc lịch sử cả nhóm);
+  đánh dấu đã đọc theo chủ đề = `messages.readDiscussion` (không đánh dấu cả nhóm); gửi vào chủ đề = trả lời tin tạo chủ đề
+  (`reply_to_msg_id` = chủ đề, theo tài liệu Telegram; General gửi như nhóm thường; trả lời một tin trong chủ đề thì máy chủ
+  tự xếp). Tin hệ thống sửa chủ đề (đổi tên / đóng / mở / ẩn / đổi biểu tượng); tin hệ thống không có người gửi (quản trị viên
+  ẩn danh) lấy tên chat như app gốc.
+- Dựng `Message` của grammers từ phản hồi thô cần `PeerMap` — grammers 0.12 không cho dựng từ ngoài → vendor
+  `grammers-client` 0.12.0 (`core/vendor/grammers-client`), bản vá một chữ: `Client::build_peer_map` công khai
+  (`core/patches/0002-grammers-client-build-peer-map.patch`). Cách khác (getReplies lấy mã rồi `get_messages_by_id`) tốn hai
+  lượt mạng mỗi trang.
+- App: nhóm có chủ đề mở màn danh sách chủ đề (`GMTopicsViewController`, ô giống danh sách chat: biểu tượng chữ cái trên nền
+  `icon_color` — emoji riêng của chủ đề chưa vẽ; 📌 ghim, 🔒 đóng, 🔇 tắt tiếng; tin mới cập nhật trực tiếp, cuộn tới cuối tải
+  thêm); chạm chủ đề → màn chat chỉ tin chủ đề đó (tiêu đề = tên chủ đề, dòng phụ = tên nhóm); «Tất cả» → mọi tin như nhóm
+  thường. Số chưa đọc của nhóm = tổng các chủ đề. Không theo cờ «xem dạng tin nhắn» của tài khoản (app chưa có chỗ đổi lại —
+  dùng «Tất cả»).
+- Thử (iPhone 5, nhóm anh cho phép, chỉ xem, công cụ thử `noread` tắt đánh dấu đã đọc): 17 chủ đề, ghim / đóng / màu đúng;
+  chủ đề thường, General, «Tất cả» đúng tin, không còn trích dẫn giả. Chưa gửi tin vào chủ đề (tài khoản chính — chỉ thử
+  trong Tin nhắn đã lưu).
+
+## D29. Video H.265 — 17/11/2026
+
+- iOS 5 / 6 chỉ giải hình H.264; video quay bằng máy mới (H.265 / HEVC) phát lên chỉ có tiếng. Telegram tự chuyển nhiều
+  video sang vài mức chất lượng (`messageMediaDocument.alt_documents`, `documentAttributeVideo.video_codec`).
+- `media.document` + `video: true` (app gọi khi phát video / video tròn): tệp gốc không ghi H.264 mà có bản H.264 → tải bản có
+  cạnh ngắn cao nhất ≤ 720 (không có thì bản nhỏ nhất) vào chỗ tệp gốc; tệp H.265 đã tải từ trước (nhận bằng `hvc1` / `hev1`
+  trong hộp `moov`) thì xoá, tải bản H.264. Không có bản H.264 → trả `hevc: true`, app báo «Video mã H.265 — iOS 5 / 6 chỉ phát
+  được tiếng» (nhật ký lõi ghi mã / cỡ của tệp gốc và các bản khác).
+- Video anh gặp (một nhóm của anh, 12,7 MB): tệp gốc H.265, không có thuộc tính video, không có bản nào khác → chỉ báo được.
+  Giải H.265 bằng phần mềm (libde265 / ffmpeg) trên A5 / A6 chưa làm — nặng, chưa chắc kịp thời gian thực.
+
+## D30. Giải H.265 bằng phần mềm: chuyển sang H.264 trên máy — 17/11/2026 (bản 1.3)
+
+- Video H.265 không có bản H.264 trên máy chủ (D29): phát thẳng H.265 theo thời gian thực bằng phần mềm không kịp trên A4 / A5
+  (1080p) → **chuyển một lần** sang H.264 rồi phát bằng trình phát của iOS (tua, toàn màn hình, tiếng chuẩn), tệp H.264 thay
+  tệp gốc trong bộ đệm (lần sau mở là phát ngay).
+- Giải mã: FFmpeg 7.1.5 (LGPL 2.1+), chỉ bộ giải HEVC, vendor ở `core/vendor/ffmpeg` bằng `tools/ffmpeg/vendor-ffmpeg.py`:
+  chép tệp cần + dây chuyền `#include`, tự sinh `config.h` (quét macro → mặc định 0, bật phần cần) — không chạy `configure`.
+  armv7: hợp ngữ NEON của FFmpeg (clang của Theos hợp dịch được, `HAVE_AS_FUNC 0`, `HAVE_VFP_ARGS 0` — ABI softfp), giải song
+  song theo khung (`FF_THREAD_FRAME`, số nhân). Không `clock_gettime` (iOS 10+). Đã kiểm ký hiệu iOS 5 / 6: thiếu 0.
+- Crate `gm-hevc`: đọc MP4 bằng Rust (`moov/trak/stbl`, hvcC, ma trận xoay, ctts — khung B), gọi FFmpeg qua lớp bọc C mỏng,
+  thu nhỏ song tuyến ra NV12 dải video (cạnh ngắn ≤ 480; 10 bit → 8 bit; dải đầy → dải video). Windows / MSVC: bản rỗng.
+- App (`GMHevcTranscoder`): khung NV12 → `AVAssetWriter` H.264 phần cứng (~3 bit / điểm ảnh / giây — 480p ≈ 1,2 Mbit/s), giữ
+  ma trận xoay; tiếng: `AVAssetReader` ra PCM → mã lại AAC (iOS 5 chưa chép thẳng AAC sang tệp mới được — thiếu
+  `sourceFormatHint`); ghi xen kẽ hình / tiếng (writer chỉ nhận tiếp một rãnh khi rãnh kia theo kịp). Máy một nhân: bỏ khung
+  không làm tham chiếu (`AVDISCARD_NONREF` — không khung nào dựa vào → không nhoè; nhanh ~1,7 lần, ít khung / giây hơn).
+- Đo (1080 × 1920, 30 khung / giây, 200 giây): iPhone 5 **27 khung / giây** (222 giây cho 200 giây video); iPad 1: 1019 giây
+  (5,9 khung / giây) → bật bỏ khung không làm tham chiếu: **537 giây** (video ra 3032 khung ≈ 15 khung / giây, hình sạch). Bong bóng video hiện % trong lúc chuyển; xong mà còn ở màn chat thì phát luôn.

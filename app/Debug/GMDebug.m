@@ -2,6 +2,8 @@
 #import "GMAppDelegate.h"
 #import "GMChatListViewController.h"
 #import "GMChatViewController.h"
+#import "GMTopicsViewController.h"
+#import "GMTheme.h"
 #import "GMChatInfoViewController.h"
 #import "GMLottieView.h"
 #import "GMCore.h"
@@ -17,6 +19,9 @@
 #import "GMLoginViewController.h"
 #import "GMUpdate.h"
 #import <UIKit/UIKit.h>
+#import <MediaPlayer/MediaPlayer.h>
+#import "GMFiles.h"
+#import "GMHevcTranscoder.h"
 
 static NSString *const kCmdFile = @"/var/mobile/Documents/GramMini-cmd.txt";
 
@@ -79,6 +84,58 @@ static void GMFindText(UIView *v, NSString *text) {
         if (app.list.myId) [app.list openChat:@{@"peer": app.list.myId} jumpTo:nil];
     } else if ([cmd isEqual:@"open"]) {
         [app.list openRow:arg.integerValue];
+    } else if ([cmd isEqual:@"forums"]) {
+        // Ghi các hàng là nhóm có chủ đề (không mở gì; không ghi tên)
+        for (NSInteger r = 0; r < 300; r++) {
+            NSDictionary *d = [app.list debugDialogAt:r];
+            if (!d) break;
+            if ([GMVal(d, @"forum") boolValue]) GMLog(@"[thử] hàng %ld: nhóm có chủ đề %@", (long)r, GMVal(d, @"peer"));
+        }
+    } else if ([cmd isEqual:@"topic"] && [top isKindOfClass:[GMTopicsViewController class]]) {
+        [(GMTopicsViewController *)top openTopicAt:arg.integerValue];
+    } else if ([cmd isEqual:@"topicsall"] && [top isKindOfClass:[GMTopicsViewController class]]) {
+        [(GMTopicsViewController *)top openAll];
+    } else if ([cmd isEqual:@"playvideo"]) {
+        // playvideo <peer> <id> — tải video để phát (lõi chọn bản H.264) rồi mở trình phát
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        if (p.count == 2) {
+            NSNumber *mid = @([[p objectAtIndex:1] longLongValue]);
+            NSString *peer = [p objectAtIndex:0];
+            void (^play)(NSString *) = ^(NSString *path) {
+                MPMoviePlayerViewController *mp = [[MPMoviePlayerViewController alloc] initWithContentURL:[NSURL fileURLWithPath:path]];
+                [top presentMoviePlayerViewControllerAnimated:mp];
+            };
+            [[GMFiles shared] fetchVideo:peer msg:mid done:^(NSString *path, BOOL hevc) {
+                GMLog(@"[thử] playvideo → %@ (hevc %d)", path.lastPathComponent, hevc);
+                if (!path) return;
+                if (!hevc) {
+                    play(path);
+                    return;
+                }
+                [[GMFiles shared] convertVideo:path peer:peer msg:mid done:^(NSString *np, NSString *err) {
+                    GMLog(@"[thử] playvideo: chuyển xong → %@ %@", np.lastPathComponent, err ?: @"");
+                    if (np) play(np);
+                }];
+            }];
+        }
+    } else if ([cmd isEqual:@"convertfile"]) {
+        // convertfile <nguồn H.265> <đích> — chuyển tệp có sẵn trên máy sang H.264 (không qua Telegram) rồi phát
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        if (p.count == 2) {
+            [GMHevcTranscoder transcode:[p objectAtIndex:0] to:[p objectAtIndex:1] progress:nil done:^(BOOL ok, NSString *err) {
+                GMLog(@"[thử] convertfile → %d %@", ok, err ?: @"");
+                if (!ok) return;
+                MPMoviePlayerViewController *mp =
+                    [[MPMoviePlayerViewController alloc] initWithContentURL:[NSURL fileURLWithPath:[p objectAtIndex:1]]];
+                [top presentMoviePlayerViewControllerAnimated:mp];
+            }];
+        }
+    } else if ([cmd isEqual:@"playmovie"]) {
+        MPMoviePlayerViewController *mp = [[MPMoviePlayerViewController alloc] initWithContentURL:[NSURL fileURLWithPath:arg]];
+        [top presentMoviePlayerViewControllerAnimated:mp];
+    } else if ([cmd isEqual:@"noread"]) {
+        // noread 1: xem chat thật mà không đánh dấu đã đọc; noread 0: trở lại bình thường
+        [GMChatViewController setDebugNoRead:[arg boolValue]];
     } else if ([cmd isEqual:@"back"]) {
         [nav popViewControllerAnimated:YES];
     } else if ([cmd isEqual:@"send"] && [top isKindOfClass:[GMChatViewController class]]) {

@@ -188,6 +188,54 @@ pub fn run(args: Vec<String>) -> i32 {
                      v.frame_rate(), v.has_alpha(), frames * loops, ms / (frames * loops) as f64);
             return Ok(());
         }
+        if cmd == "hevc" {
+            // hevc <tệp .mp4 H.265> <thư mục ra> [cạnh ngắn tối đa] [số khung] [fast] — giải mã thử (như app chuyển sang H.264): đo
+            // tốc độ, ghi vài khung NV12 → PNG (frame-<i>.png); «fast» = bỏ khung không làm tham chiếu (như máy một nhân)
+            let [src, dir, more @ ..] = rest.as_slice() else { return Err("hevc <tệp> <thư mục> [cạnh ngắn] [số khung] [fast]".into()) };
+            let short: u32 = more.first().and_then(|s| s.parse().ok()).unwrap_or(480);
+            let want: usize = more.get(1).and_then(|s| s.parse().ok()).unwrap_or(usize::MAX);
+            let fast = more.get(2).map(|s| s == "fast").unwrap_or(false);
+            let mut v = gm_hevc::Video::open(std::path::Path::new(src), short, fast)?;
+            let i = v.info();
+            println!("{src}: {}x{} → {}x{}, {} khung, thang {} , {:.1} giây, ma trận {:?}", i.width, i.height, i.out_width,
+                     i.out_height, i.frames, i.timescale, i.duration as f64 / i.timescale as f64, i.matrix);
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            let (ow, oh) = (i.out_width as usize, i.out_height as usize);
+            let (mut y, mut uv) = (vec![0u8; ow * oh], vec![0u8; ow * oh / 2]);
+            let t = Instant::now();
+            let (mut n, mut last) = (0usize, -1i64);
+            while n < want {
+                let Some(pts) = v.next(&mut y, ow, &mut uv, ow)? else { break };
+                if pts <= last {
+                    println!("khung {n}: pts {pts} không tăng (trước {last})");
+                }
+                last = pts;
+                if n % 60 == 0 && n / 60 < 4 {
+                    // NV12 dải video → RGB (BT.709)
+                    let mut rgb = vec![0u8; ow * oh * 3];
+                    for yy in 0..oh {
+                        for xx in 0..ow {
+                            let l = (y[yy * ow + xx] as f32 - 16.0) * 1.164;
+                            let u = uv[(yy / 2) * ow + (xx / 2) * 2] as f32 - 128.0;
+                            let vv = uv[(yy / 2) * ow + (xx / 2) * 2 + 1] as f32 - 128.0;
+                            let p = (yy * ow + xx) * 3;
+                            rgb[p] = (l + 1.793 * vv).clamp(0.0, 255.0) as u8;
+                            rgb[p + 1] = (l - 0.213 * u - 0.533 * vv).clamp(0.0, 255.0) as u8;
+                            rgb[p + 2] = (l + 2.112 * u).clamp(0.0, 255.0) as u8;
+                        }
+                    }
+                    let file = std::fs::File::create(format!("{dir}/frame-{n}.png")).map_err(|e| e.to_string())?;
+                    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), ow as u32, oh as u32);
+                    enc.set_color(png::ColorType::Rgb);
+                    enc.set_depth(png::BitDepth::Eight);
+                    enc.write_header().map_err(|e| e.to_string())?.write_image_data(&rgb).map_err(|e| e.to_string())?;
+                }
+                n += 1;
+            }
+            let s = t.elapsed().as_secs_f64();
+            println!("giải {n} khung trong {s:.1} giây: {:.1} khung / giây (pts cuối {last})", n as f64 / s);
+            return Ok(());
+        }
         if cmd == "voice" {
             // voice decode <ogg> <wav> | voice encode <wav> <ogg>
             let [op, src, dst] = rest.as_slice() else { return Err("voice decode|encode <vào> <ra>".into()) };
