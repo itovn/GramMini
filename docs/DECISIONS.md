@@ -462,5 +462,15 @@ Thiết kế đầy đủ: [THIET-KE.md](THIET-KE.md).
   - **Tệp riêng tư**: `session.json`, `settings.json`, `outbox.json` ghi qua tệp tạm tạo mới quyền 0600; tệp `.html` / `.svg`…
     người khác gửi lưu đệm thành `.txt` (QuickLook không dựng HTML); số ngẫu nhiên lấy từ `/dev/urandom` (arc4random iOS 5 / 6
     là RC4). Bản thử: tệp lệnh phải do root ghi.
-  - Chưa làm: ký nguồn Cydia (`Release.gpg`); bản đồ tin vị trí vẫn tải thẳng từ OpenStreetMap.
+  - Còn để ngỏ: bản đồ tin vị trí vẫn tải thẳng từ OpenStreetMap (tính năng, đã ghi trong README).
+- **Bản 1.4.2 (18/11/2026, anh: làm nốt hai lỗi thấp còn lại):**
+  - **Ký nguồn Cydia**: khoá GPG RSA-3072 riêng cho nguồn (`keys/cydia-gnupg`, không lên git) — `tools/sign-cydia-repo.sh` ký
+    `Release` → `Release.gpg` (apt 0.7.25.3 của Cydia iOS 5 / 6 đọc tệp này, gpgv 1.4.9) + `InRelease` (apt mới). Khoá công khai
+    đi kèm gói: `/etc/apt/trusted.gpg.d/vn.grammini.gpg` (cách các nguồn BigBoss / ModMyi / Saurik vẫn làm) và ở
+    `cydia/vn.grammini.gpg`. Thử trên iPhone 5 bằng apt của máy (danh sách / bộ đệm riêng trong /tmp): có khoá → nhận chữ ký,
+    không cảnh báo; `Release` bị sửa → `BADSIG`; máy chưa có khoá (chưa lên 1.4.2) → cảnh báo `NO_PUBKEY` (chỉ cảnh báo, Cydia
+    vẫn làm mới và cài được như trước — hết sau khi cập nhật app).
+  - **Mini app mở trong app** (`GMWebAppViewController`, UIWebView) thay vì Safari: link có dữ liệu đăng nhập Telegram không
+    nằm lại trong lịch sử Safari mà ở sau khoá mật mã; đóng là xoá trang khỏi bộ nhớ. Trong khung chỉ đi http / https; link
+    Telegram → đóng khung, mở chat trong app; kiểu khác → hỏi như link thường. Hỏi «Mở ứng dụng của bot?» một lần cho mỗi bot.
 

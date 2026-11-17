@@ -336,10 +336,26 @@ Anh báo chat với bot không bật được menu như Telegram mới, rồi nh
   gm-hevc 4.
 - Phát hành 1.4.1: ký hiệu iOS 5 (iPad 1) / iOS 6 (iPhone 5): 548 (gồm `gmupdate`), thiếu 0; cài gói phát hành lên iPad 1 khởi
   động được (ở nền — GramMusic của phiên khác đang ở trước). Gói ký bằng `tools/sign-release.sh`, `.sig` đính kèm Release.
+- Đã phát hành: GitHub Release v1.4.1 (bản mới nhất — OTA; gói 4 076 374 byte, SHA-256 `cea1888b19af267e00619c8851fe6027`
+  `0783f55b10f60774907d80b19462dc75`, kèm `.deb.sig`), nguồn Cydia (1.3.0 / 1.4.0 / 1.4.1, mô tả không dấu), trang mô tả, trang
+  giới thiệu, repo công khai 2f31fc8 (thẻ v1.4.1). Tải lại từ GitHub và nguồn Cydia: cùng SHA-256; chữ ký tải về kiểm đúng.
+- Máy đang chạy 1.4.0 lên 1.4.1 qua `gmupdate` cũ (chưa cần chữ ký) — từ 1.4.1 lên các bản sau mới dùng `gmupdate` mới.
 
 #### Việc tiếp theo
 
 1. Thử trọn luồng OTA với `gmupdate` mới (máy thử chạy bản số thấp hơn → cập nhật lên bản có `.sig`) khi có máy rảnh.
 2. Thử trên máy các phần sửa giao diện chưa thử: hỏi trước khi mở link lạ / link ẩn, khoá mật mã + link `tg://`, màn proxy.
 3. Sao lưu `keys/ota-sign.key` ra ngoài máy (mất khoá → máy chạy 1.4.1 phải cập nhật qua Cydia một lần).
+
+### Bản 1.4.2 — ký nguồn Cydia, mini app mở trong app (18/11/2026)
+
+Anh nhờ làm nốt hai lỗi thấp còn lại của lần kiểm tra bảo mật (D33).
+
+- Nguồn Cydia ký GPG (`tools/sign-cydia-repo.sh`, khoá trong `keys/cydia-gnupg`); gói cài khoá công khai vào
+  `/etc/apt/trusted.gpg.d/vn.grammini.gpg`. Thử trên iPhone 5 (apt 0.7.25.3, gpgv 1.4.9, danh sách riêng trong /tmp — không đụng
+  dữ liệu Cydia): có khoá → nhận chữ ký; `Release` sửa một chữ → `BADSIG`; chưa có khoá → `NO_PUBKEY` (cảnh báo, vẫn làm mới
+  được). Bản thử cài lên iPhone 5: khoá có trong `trusted.gpg.d`.
+- Mini app: màn trong app (UIWebView) thay Safari. Thử trên iPhone 5 bằng lệnh thử `webapp <link>` với trang giới thiệu
+  GramMini (không qua bot): trang hiện đúng, «Đóng» / tải lại chạy. Chưa thử với mini app thật của bot (cần anh cho bấm nút
+  bot — tài khoản chính).
 

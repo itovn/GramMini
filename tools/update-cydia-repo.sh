@@ -4,7 +4,8 @@
 # Chép .deb vào cydia/debs (giữ 3 bản mới nhất), tạo Packages(.gz/.bz2) bằng dpkg-scanpackages (thêm Depiction / Homepage nếu
 # gói chưa có) và Release (MD5 + SHA256).
 # Nguồn trong Cydia: https://itovn.github.io/GramMini/cydia/  (dòng APT: deb https://itovn.github.io/GramMini/cydia/ ./)
-# Cần dpkg-dev (dpkg-scanpackages), gzip, bzip2 — chạy trên máy Linux dựng.
+# Cần dpkg-dev (dpkg-scanpackages), gzip, bzip2 — chạy trên máy Linux dựng. Xong thì ký trên máy phát hành (khoá GPG không nằm
+# trên máy dựng): bash tools/sign-cydia-repo.sh <thư mục cydia> → Release.gpg + InRelease.
 set -euo pipefail
 REPO="${1:?thư mục cydia/}"
 shift

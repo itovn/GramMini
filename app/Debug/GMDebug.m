@@ -2,6 +2,7 @@
 #import "GMDebug.h"
 #import "GMAppDelegate.h"
 #import "GMChatListViewController.h"
+#import "GMWebAppViewController.h"
 #import "GMChatViewController.h"
 #import "GMTopicsViewController.h"
 #import "GMTheme.h"
@@ -244,6 +245,11 @@ static void GMFindText(UIView *v, NSString *text) {
         if (s2.location != NSNotFound) [GMQuickReplies save:[arg substringToIndex:s2.location] text:[arg substringFromIndex:s2.location + 1]];
     } else if ([cmd isEqual:@"quickdel"]) {
         [GMQuickReplies remove:arg];
+    } else if ([cmd isEqual:@"webapp"]) {
+        // webapp <url> — mở màn mini app trong app với một trang bất kỳ (không qua bot)
+        [GMWebAppViewController present:[NSURL URLWithString:arg] title:@"Thử mini app" from:top];
+    } else if ([cmd isEqual:@"webappclose"]) {
+        [top dismissViewControllerAnimated:YES completion:nil];
     } else if ([cmd isEqual:@"botmenu"] && [top isKindOfClass:[GMChatViewController class]]) {
         // botmenu — chạm nút «Menu» của bot (danh sách lệnh / xin link mini app — không mở Safari)
         [(GMChatViewController *)top debugMenu];

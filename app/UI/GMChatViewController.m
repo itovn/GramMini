@@ -21,6 +21,7 @@
 #import "GMTitleView.h"
 #import "GMTheme.h"
 #import "GMLinks.h"
+#import "GMWebAppViewController.h"
 #import "GMReactionPicker.h"
 #import "GMPollView.h"
 #import "GMScheduledViewController.h"
@@ -895,7 +896,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
         return;
     }
     if ([k isEqual:@"web"]) {
-        [self openWebApp:GMVal(b, @"u") bot:nil simple:YES menu:NO];
+        [self openWebApp:GMVal(b, @"u") bot:nil simple:YES menu:NO title:GMVal(b, @"t")];
         return;
     }
     if (![k isEqual:@"text"]) {
@@ -910,8 +911,6 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
 }
 
 #pragma mark Nút «Menu» của bot
-
-static BOOL gDebugNoSafari;
 
 /// Chat với bot có lệnh / mini app: nút «Menu» bên trái ô nhập (như Telegram): có chữ («Menu» / chữ bot đặt), đang gõ thì thu
 /// lại thành biểu tượng ba vạch.
@@ -969,7 +968,7 @@ static BOOL gDebugNoSafari;
 
 - (void)menuTapped {
     if ([GMVal(_botMenu, @"k") isEqual:@"web"]) {
-        [self openWebApp:GMVal(_botMenu, @"u") bot:nil simple:NO menu:YES];
+        [self openWebApp:GMVal(_botMenu, @"u") bot:nil simple:NO menu:YES title:GMVal(_botMenu, @"t")];
         return;
     }
     if (_menuOpen) {
@@ -997,24 +996,30 @@ static BOOL gDebugNoSafari;
     [self layoutBars:NO];
 }
 
-/// Mini app của bot: xin Telegram link có dữ liệu đăng nhập rồi mở bằng Safari (iOS 5 / 6 không có khung mini app trong app;
-/// trang viết cho trình duyệt mới có thể không chạy trên Safari cũ). `bot`: bot gửi tin có nút (nhóm) — nil = chat này.
-- (void)openWebApp:(NSString *)url bot:(NSString *)bot simple:(BOOL)simple menu:(BOOL)menu {
+/// Mini app của bot: xin Telegram link có dữ liệu đăng nhập rồi mở NGAY TRONG APP (GMWebAppViewController — không ra Safari:
+/// link có dữ liệu đăng nhập không nằm lại trong lịch sử Safari; kiểm bảo mật 17/11/2026). Lần đầu với mỗi bot: hỏi trước (bot
+/// nhận tên + ID Telegram). `bot`: bot gửi tin có nút (nhóm) — nil = chat này.
+- (void)openWebApp:(NSString *)url bot:(NSString *)bot simple:(BOOL)simple menu:(BOOL)menu title:(NSString *)title {
     if (![url isKindOfClass:[NSString class]] || !url.length) return;
-    if (!gDebugNoSafari) {
-        // Hỏi trước: rời app sang Safari; bot nhận tên + ID Telegram; link (có dữ liệu đăng nhập) nằm lại trong lịch sử Safari
+    NSString *who = [bot isKindOfClass:[NSString class]] && bot.length ? bot : self.peer;
+    NSArray *allowed = [[NSUserDefaults standardUserDefaults] arrayForKey:@"webapp.allowed"];
+    if (![allowed containsObject:who]) {
         __weak GMChatViewController *ws = self;
         GMAlertShow(@"Mở ứng dụng của bot?",
-                    @"Ứng dụng mở bằng Safari và nhận tên, ID Telegram của bạn. Trang viết cho máy mới có thể không chạy trên iOS cũ.",
+                    @"Ứng dụng của bot nhận tên và ID Telegram của bạn. Trang viết cho máy mới có thể không chạy trên iOS cũ.",
                     @"Huỷ", @"Mở", ^(NSInteger i) {
-                        if (i == 1) [ws requestWebApp:url bot:bot simple:simple menu:menu];
+                        if (i != 1) return;
+                        NSMutableArray *m = [NSMutableArray arrayWithArray:[[NSUserDefaults standardUserDefaults] arrayForKey:@"webapp.allowed"] ?: @[]];
+                        if (![m containsObject:who]) [m addObject:who];
+                        [[NSUserDefaults standardUserDefaults] setObject:m forKey:@"webapp.allowed"];
+                        [ws requestWebApp:url bot:bot simple:simple menu:menu title:title];
                     });
         return;
     }
-    [self requestWebApp:url bot:bot simple:simple menu:menu];
+    [self requestWebApp:url bot:bot simple:simple menu:menu title:title];
 }
 
-- (void)requestWebApp:(NSString *)url bot:(NSString *)bot simple:(BOOL)simple menu:(BOOL)menu {
+- (void)requestWebApp:(NSString *)url bot:(NSString *)bot simple:(BOOL)simple menu:(BOOL)menu title:(NSString *)title {
     NSMutableDictionary *a = [@{@"peer": self.peer, @"url": url, @"simple": @(simple), @"menu": @(menu)} mutableCopy];
     if ([bot isKindOfClass:[NSString class]] && bot.length) [a setObject:bot forKey:@"bot"];
     [UIApplication sharedApplication].networkActivityIndicatorVisible = YES;
@@ -1026,13 +1031,17 @@ static BOOL gDebugNoSafari;
             [GMTheme toast:err ? GMErrorText(err) : @"Không mở được ứng dụng của bot." in:self.view];
             return;
         }
-        if (gDebugNoSafari) return;  // lệnh thử: không rời app
-        [GMLinks openWeb:u];
+        NSURL *link = [NSURL URLWithString:u];
+        if (!link) {
+            [GMTheme toast:@"Không mở được ứng dụng của bot." in:self.view];
+            return;
+        }
+        [_input resignFirstResponder];
+        [GMWebAppViewController present:link title:[GMTheme dropMissingEmoji:title] from:self];
     }];
 }
 
 - (void)debugMenu {
-    gDebugNoSafari = YES;
     GMLog(@"[thử] nút Menu: %@ (%@, %.0f pt), %lu lệnh", _botMenu ? GMVal(_botMenu, @"k") : @"không có",
           [_menuBtn titleForState:UIControlStateNormal] ?: @"biểu tượng", [self menuWidth], (unsigned long)_commands.count);
     if (_botMenu) [self menuTapped];
@@ -1084,7 +1093,7 @@ static BOOL gDebugNoSafari;
     if ([k isEqual:@"url"]) {
         [GMLinks open:GMVal(b, @"u") in:self.view];
     } else if ([k isEqual:@"web"]) {
-        [self openWebApp:GMVal(b, @"u") bot:GMVal(m, @"from_id") simple:NO menu:NO];
+        [self openWebApp:GMVal(b, @"u") bot:GMVal(m, @"from_id") simple:NO menu:NO title:GMVal(b, @"t")];
     } else if ([k isEqual:@"copy"]) {
         [UIPasteboard generalPasteboard].string = GMVal(b, @"c") ?: @"";
         [GMTheme toast:@"Đã sao chép" in:self.view];
