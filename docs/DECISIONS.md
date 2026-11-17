@@ -362,3 +362,72 @@ Thiết kế đầy đủ: [THIET-KE.md](THIET-KE.md).
   không làm tham chiếu (`AVDISCARD_NONREF` — không khung nào dựa vào → không nhoè; nhanh ~1,7 lần, ít khung / giây hơn).
 - Đo (1080 × 1920, 30 khung / giây, 200 giây): iPhone 5 **27 khung / giây** (222 giây cho 200 giây video); iPad 1: 1019 giây
   (5,9 khung / giây) → bật bỏ khung không làm tham chiếu: **537 giây** (video ra 3032 khung ≈ 15 khung / giây, hình sạch). Bong bóng video hiện % trong lúc chuyển; xong mà còn ở màn chat thì phát luôn.
+
+## D31. Tính năng Telegram còn thiếu: link t.me, cảm xúc, nút bot, bình chọn, tin ghim — 17/11/2026
+
+- Anh hỏi còn thiếu gì cấp thiết (tham khảo Roza); anh chọn làm lần lượt 11 mục (bản 1.4.0). Thử trên iPad 1 (iOS 5, chỉ xem
+  chat / kênh công khai, gửi chỉ trong Tin nhắn đã lưu); gửi thật ở chat khác (cảm xúc, bình chọn, ghim, vị trí, danh thiếp, ảnh
+  QR) và bấm «Tham gia» / nút callback của bot chưa thử — anh cho phát hành trước.
+- **Link t.me mở trong app** (`service/links.rs`, `GMLinks`): iOS 5 / 6 không có app Telegram → mở Safari là ngõ cụt. Lõi đọc
+  t.me/<tên>[/<chủ đề>]/<tin>, t.me/s/…, t.me/+<mã> / joinchat (mã phân biệt hoa thường; t.me/+84… là số điện thoại → bỏ),
+  t.me/c/<kênh>/<tin>, tg://resolve / join / privatepost / user, @tên (thực thể Mention đưa vào `links`). Lời mời chưa vào:
+  `messages.checkChatInvite` → hộp «Tham gia nhóm / kênh» (nhóm cần duyệt: «Gửi yêu cầu»); nhóm riêng cho xem trước (Peek): mở
+  như chat chưa vào, tham gia bằng mã. Chat chưa vào (`left` từ `chat.status`): thanh «Tham gia nhóm / kênh» thay ô nhập
+  (`channels.joinChannel` / `messages.importChatInvite` — lớp mới trả `ChatInviteJoinResult`). App đăng ký giao thức `tg://`
+  (nút «Mở trong Telegram» của trang t.me trong Safari mở vào GramMini; link proxy → màn Proxy). Hộp thoại có khối xử lý tách
+  ra `Core/GMAlert`.
+- **Cảm xúc** (`service/react.rs`): đọc `message.reactions` kèm tin, cập nhật `updateMessageReactions` → `msg.reactions`;
+  `messages.sendReaction` (một cảm xúc — tài khoản thường), phản hồi có danh sách mới. App: viên «👍 3» dưới chữ trong bong bóng
+  (sticker: dưới sticker), viên của mình tô màu; chạm viên = thả / gỡ; nhấn giữ → «Cảm xúc» → bảng emoji nổi trên bong bóng.
+  iOS 5 / 6 thiếu emoji mới (🥰 🤔 🤯 … vẽ ra ô trống): dò bằng CoreText (`CTFontGetGlyphsForCharacters` trên Apple Color
+  Emoji; chuỗi ZWJ coi như không vẽ được) — bảng chọn chỉ có emoji vẽ được (iPad 1: 44 / 73 loại Telegram cho), viên nhận
+  được thì đổi emoji gần nghĩa (🥰 → 😍, 🤔 → 😕…), không có thì «•». Emoji riêng Premium → «✨», sao trả phí → «⭐» (chỉ hiện).
+  Số lớn gọn như Telegram (8,8K, 1,5M). Tin nhắn đã lưu không cho (ở đó cảm xúc là thẻ — Premium); chat chỉ cho một số emoji →
+  bảng theo danh sách đó (kênh Durov chỉ cho emoji riêng → không mở bảng).
+- **Bot** (`service/bots.rs`): nút dưới tin (`replyInlineMarkup` — lớp mới: `keyboardInlineButton` + `InlineButtonType`) hiện
+  thành hàng nút dưới bong bóng: link (↗, t.me mở trong app), callback (`messages.getBotCallbackAnswer`, dữ liệu hex; câu trả lời
+  → thông báo / hộp, có `url` thì mở; bot không trả lời kịp 20 giây → im lặng), sao chép, hồ sơ người; loại khác (trò chơi, thanh
+  toán, inline…) báo chưa làm. Bàn phím trả lời (`replyKeyboardMarkup`) = `inputView` của ô nhập (hiện đúng chỗ bàn phím máy),
+  nút ▦ trong ô nhập để đổi qua lại; tự hiện khi tin mới nhất của bot có bàn phím; dùng một lần → đóng sau khi bấm; phím «gửi số»
+  → hỏi rồi gửi danh thiếp của mình, «gửi vị trí» → màn chọn vị trí. Chat bot trống: thẻ «Bot này làm được gì?» (mô tả từ
+  `users.getFullUser`) + nút «Bắt đầu» (gửi /start). Khoá bộ đệm chiều cao hàng thêm độ dài chữ + số hàng nút (bot sửa tin nhiều
+  lần mà cờ «đã sửa» không đổi → trước đây chiều cao cũ).
+- **Bình chọn** (`service/poll.rs`, `GMPollView`): câu hỏi, loại (ẩn danh / công khai / câu đố, nhiều lựa chọn, đã đóng); chưa
+  bỏ phiếu: chạm lựa chọn (nhiều lựa chọn: đánh dấu rồi «Bỏ phiếu»); đã bỏ / đã đóng: % + thanh, ✓ của mình, câu đố đúng xanh /
+  sai đỏ, «Rút phiếu». `messages.sendVote`; `updateMessagePoll` → `msg.poll` (kết quả `min` không kèm lựa chọn của mình → giữ ✓
+  cũ). Lõi có `messages.sendPoll` (lớp mới: `inputPollAnswer`) — chưa có màn tạo bình chọn, dùng cho lệnh thử.
+- **Tin ghim** (`service/pins.rs`): `messages.search` lọc `inputMessagesFilterPinned` (≤ 50, màn chủ đề lọc theo chủ đề) →
+  thanh «Tin đã ghim 1/3» trên đầu màn chat; chạm = nhảy tới tin rồi chuyển sang tin ghim cũ hơn; ✕ ẩn tới lần mở sau.
+  `updatePinnedMessages` / `updatePinnedChannelMessages` → `msg.pinned` (tải lại). Nhấn giữ → «Ghim / Bỏ ghim»
+  (`messages.updatePinnedMessage`, không báo cho mọi người; nhóm cần quyền quản trị).
+
+## D32. Tiện ích lấy từ Roza: nhắc hẹn, vị trí, iPad chia đôi, tin nhắn nhanh, VietQR, danh thiếp — 17/11/2026
+
+- **Nhắc hẹn / hẹn giờ gửi**: lõi đã có `schedule` (D17, chỉ lệnh thử) → nhấn giữ «Gửi» khi có chữ (cử chỉ chỉ bắt đầu khi ô
+  nhập có chữ — ô trống nút là mic, không được huỷ ghi âm): «Sau 30 phút / 1 giờ / 3 giờ / Tối nay 20:00 / Sáng mai 8:00 / Chọn
+  ngày giờ… (UIDatePicker) / Gửi không âm báo». Ở Tin nhắn đã lưu gọi là «Nhắc tôi» — tới giờ Telegram gửi tin, máy báo như tin
+  mới (GMBackground báo cả tin của mình nếu là tin hẹn giờ). Thanh «🕓 N lời nhắc / tin hẹn giờ ›» trên ô nhập → danh sách
+  (`messages.getScheduledHistory`): gửi ngay / huỷ. Telegram tự đồng bộ với app trên điện thoại — khác Roza (nhắc hẹn của Zalo).
+- **Vị trí** (`service/geo.rs`, `GMMap` — từ Roza `RZLocation`): MapKit iOS 5 / 6 chỉ còn lưới trống → ghép ô OpenStreetMap
+  (lõi tải `map.tile` vì TLS iOS 6 không vào được, đệm ở `maps/` — bộ đệm tính vào «khác», tự dọn), User-Agent nêu tên app
+  (quy định OSM), ghi «© OpenStreetMap»; địa chỉ bằng Nominatim tiếng Việt (chờ 0,8 giây sau lần kéo cuối). Tin vị trí /
+  địa điểm / vị trí trực tiếp: bản đồ nhỏ 240 × 150 trong bong bóng (ghép ô mức 15 + ghim, đệm trong bộ nhớ), chạm → màn bản
+  đồ (kéo, + / −, «Mở…»: chép toạ độ, Google Maps). Gửi: đính kèm → «Vị trí» → định vị máy (CoreLocation; iOS 6 hỏi quyền với
+  `NSLocationUsageDescription`) hoặc kéo bản đồ → `inputMediaGeoPoint` (tin vị trí thật — khác Roza phải gửi chữ + link).
+- **iPad chia đôi** (như Roza D20): gốc cửa sổ là `UISplitViewController` (iOS 5 / 6 bắt buộc), bên trái thanh dưới như iPhone
+  (320), bên phải `detail` (chat / danh sách chủ đề); `shouldHideViewController` → NO (luôn hai cột cả chiều dọc); chưa mở chat:
+  «Chọn một cuộc trò chuyện». Mọi chỗ mở chat (danh sách, danh bạ, tìm, link, thông báo, Tin nhắn đã lưu trong Cài đặt) đi qua
+  `GMAppDelegate showDetail:`; hàng chat đang mở được tô; đổi giao diện sáng / tối mở lại chat đang mở. Lệnh thử nhắm vào bên
+  phải nếu có (`L <lệnh>` = bên trái).
+- **Tin nhắn nhanh** (`GMQuickReplies`, Cài đặt → Tin nhắn nhanh): mẫu câu tự đặt, lưu trên máy (Telegram chỉ đồng bộ «quick
+  replies» cho tài khoản doanh nghiệp). Gõ «/» đầu ô nhập → khung gợi ý trên ô nhập: lệnh của bot (chat bot: `bot_info`, nhóm:
+  `bot_info` của các bot trong nhóm — chạm = gửi luôn) + tin nhắn nhanh khớp (chạm = chữ mẫu thay vào ô nhập, sửa rồi gửi);
+  không khớp gì → «+ Thêm tin nhắn nhanh» (mở hộp thêm, điền sẵn từ khoá).
+- **Mã QR chuyển khoản VietQR** (`service/vietqr.rs` — chuyển từ Roza, crate `qrcode`): chuỗi EMVCo / NAPAS (CRC-16/CCITT-FALSE),
+  nội dung bỏ dấu (≤ 50 ký tự). Danh sách ngân hàng nhúng sẵn (mã BIN đối chiếu api.vietqr.io ngày 17/11/2026 — Telegram không có
+  API ngân hàng như Zalo). Màn «Mã QR chuyển khoản» (đính kèm): ngân hàng, số TK, chủ TK, số tiền, nội dung → thẻ 600 điểm ảnh
+  (tên ngân hàng, QR, STK, chủ TK, số tiền) → gửi như ảnh, chú thích có STK để người nhận chép. Nhớ tài khoản dùng lần trước.
+- **Danh thiếp** (`service/contact.rs`): tin danh bạ → thẻ như bong bóng tệp (vòng chữ cái, tên, số); chạm → «Nhắn tin» (số có
+  Telegram), «Gọi» (máy gọi được), «Chép số». Gửi: đính kèm → «Danh thiếp» → chọn trong danh bạ (người ẩn số → báo).
+- Toast nhiều dòng (câu trả lời của bot dài) — trước đây cắt còn một dòng.
+- Kiểm ký hiệu bản debug: 502 / 502 trên iOS 5 (iPad 1) và iOS 6 (iPad mini 1), thiếu 0.

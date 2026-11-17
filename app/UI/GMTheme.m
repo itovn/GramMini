@@ -1,6 +1,7 @@
 #import "GMTheme.h"
 #import "GMLog.h"
 #import <QuartzCore/QuartzCore.h>
+#import <CoreText/CoreText.h>
 #import <objc/runtime.h>
 
 id GMVal(NSDictionary *d, NSString *key) {
@@ -969,6 +970,18 @@ static NSDateComponents *GMDay(NSDate *d) {
         @"poll": @"Bình chọn", @"geo": @"Vị trí", @"dice": @"Xúc xắc", @"gif": @"GIF", @"round": @"Video tròn",
     };
     NSString *label = [labels objectForKey:media] ?: @"Media";
+    NSString *q = GMVal(GMVal(msg, @"poll"), @"q");
+    if ([media isEqual:@"poll"] && q.length) label = [@"📊 " stringByAppendingString:q];
+    NSDictionary *card = GMVal(msg, @"contact");
+    if ([media isEqual:@"contact"] && [card isKindOfClass:[NSDictionary class]]) {
+        NSString *n = [[NSString stringWithFormat:@"%@ %@", GMVal(card, @"first") ?: @"", GMVal(card, @"last") ?: @""]
+                       stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        label = [@"👤 " stringByAppendingString:n.length ? n : @"Danh thiếp"];
+    }
+    if ([media isEqual:@"geo"]) {
+        NSString *place = GMVal(GMVal(msg, @"geo"), @"title");
+        label = [@"📍 " stringByAppendingString:place.length ? place : @"Vị trí"];
+    }
     NSString *fname = GMVal(GMVal(msg, @"doc"), @"name");
     if ([media isEqual:@"file"] && fname.length) label = [@"📄 " stringByAppendingString:fname];
     return text.length ? [NSString stringWithFormat:@"%@, %@", label, text] : label;
@@ -983,12 +996,14 @@ static NSDateComponents *GMDay(NSDate *d) {
     l.backgroundColor = [UIColor colorWithWhite:0 alpha:0.75];
     l.layer.cornerRadius = 10;
     l.clipsToBounds = YES;
-    CGSize s = [text sizeWithFont:l.font];
-    CGFloat w = MIN(view.bounds.size.width - 40, s.width + 30);
-    l.frame = CGRectMake(floor((view.bounds.size.width - w) / 2), floor(view.bounds.size.height * 0.62), w, 36);
+    l.numberOfLines = 0;  // câu dài (trả lời của bot…) xuống dòng thay vì bị cắt
+    CGFloat maxW = view.bounds.size.width - 40;
+    CGSize s = [(text ?: @"") sizeWithFont:l.font constrainedToSize:CGSizeMake(maxW - 30, 240) lineBreakMode:GMWordWrap];
+    CGFloat w = MIN(maxW, ceil(s.width) + 30), h = MAX(36, ceil(s.height) + 16);
+    l.frame = CGRectMake(floor((view.bounds.size.width - w) / 2), floor(MIN(view.bounds.size.height * 0.62, view.bounds.size.height - h - 60)), w, h);
     l.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
     [view addSubview:l];
-    [UIView animateWithDuration:0.3 delay:1.6 options:0 animations:^{ l.alpha = 0; }
+    [UIView animateWithDuration:0.3 delay:1.6 + MIN(4.0, text.length / 40.0) options:0 animations:^{ l.alpha = 0; }
                      completion:^(BOOL finished) { [l removeFromSuperview]; }];
 }
 
@@ -1031,6 +1046,14 @@ static NSDateComponents *GMDay(NSDate *d) {
                 for (int k = 0; k < 5; k++) CGContextFillRect(ctx, CGRectMake(5 + k * 3.6, 9.5 + r * 3.3, 2.2, 2));
             }
             CGContextFillRect(ctx, CGRectMake(8, 16.4, 10, 2));
+        } else if ([name isEqual:@"botkeys"]) {
+            // Bàn phím của bot: bốn ô vuông bo
+            CGContextSetLineWidth(ctx, 1.6);
+            for (int r = 0; r < 2; r++) {
+                for (int k = 0; k < 2; k++) {
+                    [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(4.5 + k * 9.5, 4.5 + r * 9.5, 7.5, 7.5) cornerRadius:2] stroke];
+                }
+            }
         } else if ([name isEqual:@"compose"]) {
             // Soạn tin mới: tờ giấy (hở góc trên phải) + bút chì chéo — nét đậm, màu chủ đạo (thanh trắng phẳng)
             CGContextSetLineWidth(ctx, 2);
@@ -1114,6 +1137,7 @@ static NSDateComponents *GMDay(NSDate *d) {
     else if ([kind isEqual:@"stickers"]) top = 0xFFC25A, bot = 0xF08A1C;
     else if ([kind isEqual:@"folders"]) top = 0x6FB8F5, bot = 0x2C7FD6;
     else if ([kind isEqual:@"community"]) top = 0x5FD0F0, bot = 0x1E96C8;
+    else if ([kind isEqual:@"quick"]) top = 0xF78FB3, bot = 0xD9467A;
     else top = 0xA9B2BC, bot = 0x76808B;
     img = GMDraw(CGSizeMake(29, 29), ^(CGContextRef ctx) {
         UIBezierPath *sq = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0.5, 0.5, 28, 28) cornerRadius:6.5];
@@ -1197,6 +1221,16 @@ static NSDateComponents *GMDay(NSDate *d) {
             CGContextFillPath(ctx);
             CGContextFillRect(ctx, CGRectMake(6.5, 18.5, 16, 2));
             CGContextFillEllipseInRect(ctx, CGRectMake(12.5, 20.5, 4, 3.5));
+        } else if ([kind isEqual:@"quick"]) {
+            // Tin nhắn nhanh: tia chớp
+            CGContextMoveToPoint(ctx, 16.5, 4.5);
+            CGContextAddLineToPoint(ctx, 8, 16);
+            CGContextAddLineToPoint(ctx, 13.5, 16);
+            CGContextAddLineToPoint(ctx, 12, 24.5);
+            CGContextAddLineToPoint(ctx, 21, 12.5);
+            CGContextAddLineToPoint(ctx, 15.5, 12.5);
+            CGContextClosePath(ctx);
+            CGContextFillPath(ctx);
         } else if ([kind isEqual:@"storage"]) {
             // Biểu đồ tròn: vòng + một múi đặc
             CGContextSetLineWidth(ctx, 1.8);
@@ -1351,6 +1385,51 @@ static NSString *GMGrouped(long long n) {
     b.titleLabel.shadowOffset = CGSizeMake(0, -1);
     b.adjustsImageWhenHighlighted = NO;
     return b;
+}
+
++ (BOOL)emojiRenders:(NSString *)emoji {
+    static NSMutableDictionary *cache;
+    static CTFontRef font;
+    static BOOL haveFont;
+    if (!cache) {
+        cache = [NSMutableDictionary dictionary];
+        font = CTFontCreateWithName(CFSTR("AppleColorEmoji"), 20, NULL);
+        // Tên sai thì CoreText trả phông khác — khi đó không dò được, coi như vẽ được
+        CFStringRef ps = font ? CTFontCopyPostScriptName(font) : NULL;
+        haveFont = ps && CFStringCompare(ps, CFSTR("AppleColorEmoji"), 0) == kCFCompareEqualTo;
+        if (ps) CFRelease(ps);
+    }
+    if (!emoji.length) return NO;
+    NSNumber *c = [cache objectForKey:emoji];
+    if (c) return c.boolValue;
+    NSString *s = [emoji stringByReplacingOccurrencesOfString:@"\uFE0F" withString:@""];
+    BOOL ok = s.length > 0 && [s rangeOfString:@"\u200D"].location == NSNotFound;
+    if (ok && haveFont) {
+        NSUInteger n = s.length;
+        unichar *chars = malloc(n * sizeof(unichar));
+        CGGlyph *glyphs = malloc(n * sizeof(CGGlyph));
+        [s getCharacters:chars range:NSMakeRange(0, n)];
+        ok = CTFontGetGlyphsForCharacters(font, chars, glyphs, (CFIndex)n);
+        free(chars);
+        free(glyphs);
+    }
+    [cache setObject:@(ok) forKey:emoji];
+    return ok;
+}
+
++ (NSString *)reactionGlyph:(NSString *)emoji {
+    if (!emoji.length) return @"•";
+    if ([self emojiRenders:emoji]) return emoji;
+    static NSDictionary *near;
+    if (!near) {
+        near = @{@"🥰": @"😍", @"🤩": @"😍", @"🤯": @"😱", @"🤬": @"😡", @"🤮": @"😷", @"🤔": @"😕", @"🤡": @"👹",
+                 @"🥱": @"😪", @"🥴": @"😵", @"🤣": @"😂", @"🤨": @"😒", @"🤓": @"😎", @"🤗": @"😊", @"🫡": @"👮",
+                 @"🤝": @"👍", @"🤪": @"😜", @"🤷‍♂": @"💁", @"🤷": @"💁", @"🤷‍♀": @"💁", @"🦄": @"🐴", @"🕊": @"🐦",
+                 @"🌭": @"🍔", @"❤‍🔥": @"❤", @"👨‍💻": @"💻", @"✍": @"📝", @"🖕": @"👎", @"🫶": @"❤", @"🥹": @"😢",
+                 @"🙂": @"😊", @"🙃": @"😜", @"🤭": @"😁", @"🫠": @"😵", @"🥳": @"🎉", @"🤑": @"💰", @"🥺": @"😢"};
+    }
+    NSString *alt = [near objectForKey:[emoji stringByReplacingOccurrencesOfString:@"\uFE0F" withString:@""]];
+    return alt && [self emojiRenders:alt] ? alt : @"•";
 }
 
 @end

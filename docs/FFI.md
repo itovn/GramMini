@@ -39,11 +39,11 @@ biết (có trong danh sách chat / tin đã tải — access_hash lưu trong ph
 | `dialogs.list` | `limit` (50) | `[Dialog]` |
 | `messages.history` | `peer`, `limit` (40), `offset_id`?, `topic`? | `[Message]` mới → cũ; có `topic` (chủ đề diễn đàn, General = 1) → `{"msgs": [Message], "more", "next"}` (`next` = `offset_id` trang sau) |
 | `topics.list` | `peer`, `limit` (50, ≤ 100), `q`?, `offset`? `{date, id, topic}` (chủ đề cuối trang trước: ngày + mã tin cuối, mã chủ đề) | `{"count", "topics": [Topic]}` — thứ tự máy chủ (ghim trước) |
-| `messages.send` | `peer`, `text`, `reply_to`?, `topic`? (gửi vào chủ đề — mọi lệnh `messages.send*` đều nhận), `schedule`? (Unix giây — hẹn giờ), `queue`? | `Message`; hẹn giờ → `{"scheduled": true}`; `queue` + lỗi mạng → `{"queued": true, "local_id", …}` (hàng chờ, xem `outbox.*`) |
+| `messages.send` | `peer`, `text`, `reply_to`?, `topic`? (gửi vào chủ đề — mọi lệnh `messages.send*` đều nhận), `schedule`? (Unix giây — hẹn giờ), `silent`? (không âm báo), `queue`? | `Message`; hẹn giờ → `{"scheduled": true}`; `queue` + lỗi mạng → `{"queued": true, "local_id", …}` (hàng chờ, xem `outbox.*`) |
 | `messages.typing` | `peer`, `action`: typing \| recording \| voice \| photo \| video \| file \| cancel | `{}` — báo «đang …» |
 | `messages.search` | `q`, `peer`? (không có = mọi chat), `limit` (30) | `[Message + chat_name]` |
 | `messages.media` | `peer`, `kind`: photo (ảnh + video) \| file \| voice \| link \| music, `limit` (60), `offset_id`? | `[Message]` mới → cũ |
-| `chat.status` | `peer` | người: `{kind: user, bot, status: online\|offline\|recently\|week\|month\|hidden, was_online?, expires?}`; nhóm / kênh: `{kind, members, online}` |
+| `chat.status` | `peer` | người: `{kind: user, bot, status: online\|offline\|recently\|week\|month\|hidden, was_online?, expires?, bot_info?: {description, commands: [{c, d}]}}`; nhóm / kênh: `{kind, members, online, left (chưa vào / đã rời), reactions: "all"\|"none"\|[emoji], commands: [{c: "/lệnh", d}]}` |
 | `chat.info` | `peer` | `Peer` + `about`, `muted`, `ttl` (giây tin tự xoá, 0 = tắt); người: `blocked`, `common_chats`; nhóm / kênh: `members`, `online`, `can_view_members` |
 | `chat.ttl` | `peer`, `period` (giây; 0 = tắt) | `{ttl}` — tin mới trong chat tự xoá sau `period` (cả hai bên / mọi người); nhóm / kênh cần quyền quản trị; Tin nhắn đã lưu: `PEER_ID_INVALID` |
 | `account.defaultTtl` | `period`? | `{ttl}` — không có `period`: đọc; có: đặt mức tự xoá mặc định cho chat mới |
@@ -104,11 +104,33 @@ biết (có trong danh sách chat / tin đã tải — access_hash lưu trong ph
 | `cache.clear` | `kinds`? [loại], `peer`? | `{"freed", "files"}` — không tham số = xoá hết; + sự kiện `cache.cleared` |
 | `cache.set` | `limit_mb`? (0 = không giới hạn), `keep_days`? (0 = mãi mãi) | `{}` — lưu `settings.json`, dọn ngay |
 | `app.flush` | — | `{}` — ghi phiên ra đĩa (gọi khi app xuống nền) |
+| `link.resolve` | `url` (t.me/…, telegram.me, tg://resolve / join / privatepost / user, @tên) | `{type: "peer", peer: Peer, msg?}` (mở chat, nhảy tới tin), `{type: "invite", hash, title, about, members, channel, request}` (lời mời chưa vào), `{type: "web"}` (link khác); lỗi `USERNAME_NOT_OCCUPIED`, `INVITE_HASH_EXPIRED`, `PEER_UNKNOWN` |
+| `chats.join` | `peer` (nhóm / kênh công khai) hoặc `hash` (link mời) | `Peer` của chat vừa vào; lỗi `INVITE_REQUEST_SENT` (đã gửi yêu cầu, chờ duyệt), `CHANNELS_TOO_MUCH`, `CHANNEL_PRIVATE` |
+| `messages.react` | `peer`, `id`, `emoji`? (không có = gỡ) | `{reactions}` mới của tin (thay cảm xúc cũ của mình) |
+| `reactions.available` | — | `["👍", …]` emoji Telegram cho thả (bỏ loại ngừng dùng / chỉ Premium) |
+| `messages.botCallback` | `peer`, `id`, `data` (hex) | `{message?, alert, url?}` — bấm nút callback dưới tin của bot; bot không trả lời kịp → `{}` |
+| `messages.vote` | `peer`, `id`, `options` [mã hex] (rỗng = rút phiếu) | `{poll_id, poll?, results}` |
+| `messages.sendPoll` | `peer`, `q`, `answers` [2–12 chữ], `multi`?, `public`? | `Message` |
+| `messages.pinned` | `peer` | `[Message]` tin đang ghim, mới → cũ (≤ 50) |
+| `messages.pin` | `peer`, `id`, `unpin`?, `notify`? | `{}`; nhóm / kênh cần quyền quản trị (`CHAT_ADMIN_REQUIRED`) |
+| `messages.scheduled` | `peer` | `[Message]` tin đã hẹn giờ (`date` = giờ gửi), sớm → muộn |
+| `messages.scheduledSend` / `messages.scheduledDelete` | `peer`, `ids` | `{}` — gửi ngay / huỷ tin hẹn giờ |
+| `map.tile` | `z`, `x`, `y` | `{path}` — ô bản đồ OpenStreetMap 256 × 256 PNG (đệm `maps/`) |
+| `map.address` | `lat`, `lng` | `{address}` — Nominatim, tiếng Việt, 4 phần đầu |
+| `messages.sendGeo` | `peer`, `lat`, `lng`, `reply_to`? | `Message` (tin vị trí thật của Telegram) |
+| `messages.sendContact` | `peer`, `phone`, `first`, `last`? | `Message` (danh thiếp) |
+| `vietqr.make` | `bin` (mã ngân hàng 6 số), `account`, `amount`? (đồng), `note`? | `{payload, size, bits}` — chuỗi VietQR (EMVCo / NAPAS) + ma trận QR (`bits`: '1' ô đen, hàng nối hàng) |
 
 - `User`: `{"id", "name", "username", "phone", "photo", "photo_dc"}`
-- `Peer` (tìm, danh bạ, thông tin): `{"peer", "name", "kind", "username", "photo", "photo_dc"}` + người: `"phone", "bot", "status"` (như `chat.status`)
+- `Peer` (tìm, danh bạ, thông tin): `{"peer", "name", "kind", "forum", "left", "username", "photo", "photo_dc"}` + người: `"phone", "bot", "status"` (như `chat.status`); `link.resolve` xem trước nhóm riêng: thêm `"hash"`
 - `DocRef` (sticker / GIF): `{"doc" (chuỗi), "emoji", "mime", "w", "h", "duration", "animated"}` — lõi giữ tài liệu theo mã để gửi lại.
-- `Message` còn có `"scheduled"` (tin hẹn giờ vừa tới giờ), `"silent"`, `"mentioned"`.
+- `Message` còn có `"scheduled"` (tin hẹn giờ vừa tới giờ), `"silent"`, `"mentioned"`, `"pinned"`, và (null nếu không có):
+  - `"reactions"`: `[{e, n, me, custom?, paid?}]` — emoji riêng (Premium) → «✨», sao trả phí → «⭐» (chỉ hiện);
+  - `"buttons"`: nút dưới tin của bot, mảng hàng `[{t, k: url (+u) | cb (+d hex) | copy (+c) | user (+id) | other}]`;
+  - `"keyboard"`: bàn phím trả lời của bot `{rows: [[{t, k: text | phone | geo | other}]], single, placeholder}` hoặc `{hide: true}`;
+  - `"poll"`: `{id, q, answers: [{t, o}], closed, multi, quiz, public, results: {total, voters: [{o, n, chosen, correct}], solution, min}}`;
+  - `"geo"`: `{lat, lng, title?, address?, live?}`; `"contact"`: `{phone, first, last, user?}`;
+  - `"links"` gồm cả @tên trong chữ.
 - Tên người trong danh bạ là **tên mình lưu** (máy chủ Telegram thay tên hồ sơ bằng tên trong danh bạ).
 - `Dialog`: `{"peer", "name", "kind": "user"|"group"|"channel", "unread", "pinned", "muted", "read_in", "read_out", "photo", "photo_dc", "contact", "bot", "archived", "marked_unread", "forum" (nhóm có chủ đề), "last": Message | null}`
 - `Topic`: `{"id" (General = 1), "title", "color" (RGB, 0 = không có), "emoji" (có biểu tượng emoji riêng), "closed", "pinned", "hidden", "date", "top" (mã tin cuối), "unread", "mentions", "read_in", "read_out", "muted", "last": Message | null}`
@@ -137,6 +159,9 @@ Lỗi chung: `FLOOD_WAIT` (kèm `value` giây), `NETWORK`, `NOT_STARTED`, `BAD_A
 | `outbox.sent` | `local_id`, `peer`, `msg` — tin trong hàng chờ đã gửi |
 | `outbox.failed` | `local_id`, `peer`, `code`, `message` — máy chủ từ chối tin trong hàng chờ |
 | `cache.cleared` | — lõi vừa xoá tệp đệm (tự dọn / `cache.clear`): app quên đường dẫn cũ |
+| `msg.reactions` | `peer`, `id`, `reactions` — cảm xúc của tin đổi |
+| `msg.poll` | `poll_id`, `peer`?, `id`?, `poll`?, `results` — kết quả bình chọn đổi (`results.min`: không kèm lựa chọn của mình) |
+| `msg.pinned` | `peer`, `ids`, `pinned` — ghim / bỏ ghim |
 
 ## Chuyển video H.265 → H.264 (đồng bộ, gọi ở hàng đợi nền — app/Core/GMHevcTranscoder.m)
 

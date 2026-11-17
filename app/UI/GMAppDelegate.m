@@ -1,7 +1,10 @@
 #import "GMAppDelegate.h"
+#import <QuartzCore/QuartzCore.h>
 #import "GMBackground.h"
 #import "GMPasscode.h"
 #import "GMChatListViewController.h"
+#import "GMChatViewController.h"
+#import "GMTopicsViewController.h"
 #import "GMContactsViewController.h"
 #import "GMCompat.h"
 #import "GMCore.h"
@@ -10,11 +13,47 @@
 #import "GMSettingsViewController.h"
 #import "GMTheme.h"
 #import "GMUpdate.h"
+#import "GMLinks.h"
+#import "GMProxyViewController.h"
 #ifdef DEBUG
 #import "GMDebug.h"
 #endif
 
-@interface GMAppDelegate () <UIAlertViewDelegate>
+NSString *const GMOpenChatChangedNotification = @"GMOpenChatChanged";
+
+@implementation GMEmptyDetailViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = [GMTheme background];
+    [self.view addSubview:[[GMWallpaperView alloc] initWithFrame:self.view.bounds]];
+    CGRect b = self.view.bounds;
+    UIView *box = [[UIView alloc] initWithFrame:CGRectMake(floor((b.size.width - 300) / 2), floor((b.size.height - 90) / 2) - 20, 300, 90)];
+    box.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin |
+                           UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
+    box.backgroundColor = [GMTheme pillBackground];
+    box.layer.cornerRadius = 14;
+    UILabel *t = [[UILabel alloc] initWithFrame:CGRectMake(10, 14, 280, 24)];
+    t.text = @"Chọn một cuộc trò chuyện";
+    t.font = [UIFont boldSystemFontOfSize:18];
+    t.textColor = [UIColor whiteColor];
+    t.textAlignment = GMAlignCenter;
+    t.backgroundColor = [UIColor clearColor];
+    [box addSubview:t];
+    UILabel *s = [[UILabel alloc] initWithFrame:CGRectMake(10, 40, 280, 40)];
+    s.text = @"Chạm một chat ở bên trái, hoặc nút soạn tin để nhắn cho người mới.";
+    s.font = [UIFont systemFontOfSize:14];
+    s.textColor = [UIColor whiteColor];
+    s.numberOfLines = 2;
+    s.textAlignment = GMAlignCenter;
+    s.backgroundColor = [UIColor clearColor];
+    [box addSubview:s];
+    [self.view addSubview:box];
+}
+
+@end
+
+@interface GMAppDelegate () <UIAlertViewDelegate, UISplitViewControllerDelegate>
 @end
 
 @implementation GMAppDelegate {
@@ -151,14 +190,69 @@
     self.tabs.selectedIndex = tab;
     // Hình nền sau cùng: lộ ra dưới thanh trên / thanh dưới kính
     GMWallpaperView *wall = [[GMWallpaperView alloc] initWithFrame:self.tabs.view.bounds];
+    wall.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [self.tabs.view insertSubview:wall atIndex:0];
-    self.window.rootViewController = self.tabs;
+    if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
+        // iPad: chia đôi như app Tin nhắn — bên trái thanh dưới (rộng 320 như iPhone), bên phải cuộc trò chuyện; luôn hiện cả
+        // hai theo cả chiều dọc (delegate không cho ẩn bên trái)
+        self.detail = [[UINavigationController alloc] initWithRootViewController:[[GMEmptyDetailViewController alloc] init]];
+        self.split = [[UISplitViewController alloc] init];
+        self.split.delegate = self;
+        self.split.viewControllers = @[self.tabs, self.detail];
+        self.window.rootViewController = self.split;
+        [self fixRotation];
+    } else {
+        self.window.rootViewController = self.tabs;
+    }
     [GMBackground shared].list = self.list;
+}
+
+- (BOOL)splitViewController:(UISplitViewController *)svc shouldHideViewController:(UIViewController *)vc
+              inOrientation:(UIInterfaceOrientation)orientation {
+    return NO;
+}
+
+/// iOS 5: thay rootViewController lúc máy nằm ngang thì view mới giữ khung dọc (Roza D20, iPad 1) → xoay lại theo máy.
+- (void)fixRotation {
+    [UIViewController attemptRotationToDeviceOrientation];
+    UIView *v = self.window.rootViewController.view;
+    UIInterfaceOrientation o = [UIApplication sharedApplication].statusBarOrientation;
+    CGRect b = [UIScreen mainScreen].applicationFrame;
+    if (UIInterfaceOrientationIsLandscape(o) && v.bounds.size.width < v.bounds.size.height) {
+        v.bounds = CGRectMake(0, 0, b.size.height, b.size.width);
+        [v setNeedsLayout];
+    }
+}
+
+- (BOOL)showDetail:(UIViewController *)vc {
+    if (!self.detail) return NO;
+    [self.detail setViewControllers:@[vc] animated:NO];
+    [[NSNotificationCenter defaultCenter] postNotificationName:GMOpenChatChangedNotification object:nil];
+    return YES;
+}
+
+- (NSString *)openPeer {
+    UIViewController *root = self.detail.viewControllers.count ? [self.detail.viewControllers objectAtIndex:0] : nil;
+    if ([root isKindOfClass:[GMEmptyDetailViewController class]] || ![root respondsToSelector:@selector(peer)]) return nil;
+    return [(id)root peer];
+}
+
+- (void)closeDetailFor:(NSString *)peer {
+    if (!self.detail || !peer || ![[self openPeer] isEqual:peer]) return;
+    [self.detail setViewControllers:@[[[GMEmptyDetailViewController alloc] init]] animated:NO];
+    [[NSNotificationCenter defaultCenter] postNotificationName:GMOpenChatChangedNotification object:nil];
 }
 
 - (void)reloadTheme {
     [GMTheme apply];
+    // iPad: dựng lại thì mở lại chat đang mở bên phải
+    UIViewController *open = self.detail.viewControllers.count ? [self.detail.viewControllers objectAtIndex:0] : nil;
+    NSDictionary *reopen = nil;
+    if ([open respondsToSelector:@selector(peer)] && [(id)open peer]) {
+        reopen = @{@"peer": [(id)open peer], @"name": open.title ?: @"", @"kind": [open respondsToSelector:@selector(kind)] ? ([(id)open kind] ?: @"group") : @"group"};
+    }
     [self buildUI];
+    if (reopen) [self.list openChat:reopen jumpTo:nil];
     [self.list reload];
 }
 
@@ -197,6 +291,21 @@
     // Chỉ khi đang từ nền ra (người dùng chạm thông báo) — Inactive vì hộp hệ thống đang hiện thì không mở
     if (application.applicationState != UIApplicationStateInactive || !_resuming) return;
     [self.list openPeer:[notification.userInfo objectForKey:@"peer"]];
+}
+
+/// Link tg:// từ Safari / app khác (nút «Mở trong Telegram» của trang t.me): mở chat / hỏi tham gia; link proxy → màn Proxy.
+- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url sourceApplication:(NSString *)source annotation:(id)annotation {
+    NSString *s = url.absoluteString;
+    NSString *low = s.lowercaseString;
+    GMLog(@"mở link tg:// từ app khác");
+    if ([low hasPrefix:@"tg://proxy"] || [low hasPrefix:@"tg://socks"]) {
+        GMProxyViewController *p = [[GMProxyViewController alloc] init];
+        p.initialLink = s;
+        [(UINavigationController *)self.tabs.selectedViewController pushViewController:p animated:YES];
+    } else {
+        [GMLinks open:s in:self.tabs.view];
+    }
+    return YES;
 }
 
 - (void)applicationWillTerminate:(UIApplication *)application {

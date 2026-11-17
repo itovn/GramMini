@@ -72,6 +72,17 @@ impl From<InvocationError> for CoreError {
                     "AUTH_KEY_UNREGISTERED" | "SESSION_REVOKED" => "Phiên đăng nhập đã hết — đăng nhập lại.".into(),
                     "SRP_ID_INVALID" => "Phiên kiểm tra mật khẩu đã hết — nhập lại mật khẩu.".into(),
                     "AUTH_KEY_DUPLICATED" => "Phiên đăng nhập bị Telegram huỷ (dùng cùng lúc ở hai nơi) — đăng nhập lại.".into(),
+                    "INVITE_HASH_EXPIRED" | "INVITE_HASH_INVALID" | "INVITE_HASH_EMPTY" => "Link mời đã hết hạn hoặc không đúng.".into(),
+                    "INVITE_REQUEST_SENT" => "Đã gửi yêu cầu tham gia — chờ quản trị viên duyệt.".into(),
+                    "CHANNELS_TOO_MUCH" => "Bạn đã ở quá nhiều nhóm / kênh — rời bớt rồi thử lại.".into(),
+                    "USERS_TOO_MUCH" => "Nhóm đã đủ người.".into(),
+                    "CHANNEL_PRIVATE" => "Nhóm / kênh này là riêng tư, hoặc bạn đã bị chặn khỏi đó.".into(),
+                    "CHAT_WRITE_FORBIDDEN" => "Bạn không được gửi tin trong chat này.".into(),
+                    "REACTION_INVALID" | "REACTION_EMPTY" => "Chat này không cho thả cảm xúc này.".into(),
+                    "REACTIONS_TOO_MANY" => "Tin này đã đủ số loại cảm xúc.".into(),
+                    "CHAT_ADMIN_REQUIRED" => "Cần quyền quản trị viên để làm việc này.".into(),
+                    "MESSAGE_POLL_CLOSED" => "Bình chọn đã đóng.".into(),
+                    "REVOTE_NOT_ALLOWED" => "Bình chọn này không cho đổi phiếu.".into(),
                     _ => format!("Telegram báo lỗi {} ({})", r.name, r.code),
                 };
                 let mut ce = CoreError::new(&r.name, msg);
@@ -336,7 +347,10 @@ impl Core {
         let peer = self.peer_ref(a).await?;
         let text = arg_str(a, "text")?;
         let reply = reply_arg(a);
-        let mut msg = grammers_client::message::InputMessage::new().text(text).reply_to(reply);
+        let mut msg = grammers_client::message::InputMessage::new()
+            .text(text)
+            .reply_to(reply)
+            .silent(a.get("silent").and_then(Value::as_bool).unwrap_or(false));
         // Hẹn giờ (Unix giây): máy chủ giữ tin, tới giờ mới gửi (Tin nhắn đã lưu: thành lời nhắc)
         let schedule = a.get("schedule").and_then(Value::as_i64);
         if let Some(t) = schedule {
@@ -416,6 +430,12 @@ impl Core {
                 let mut v = status_json(u.status());
                 v["kind"] = json!("user");
                 v["bot"] = json!(u.is_bot());
+                // Bot: mô tả (chat trống — trước «Bắt đầu») + lệnh (gợi ý khi gõ «/»)
+                if u.is_bot() {
+                    if let Ok(i) = Box::pin(self.bot_info(pr)).await {
+                        v["bot_info"] = i;
+                    }
+                }
                 return Ok(v);
             }
             p => p,
@@ -427,13 +447,23 @@ impl Core {
             self.client.invoke(&functions::channels::GetFullChannel { channel: pr.into() }).await?
         };
         let enums::messages::ChatFull::Full(f) = full;
-        let members = match f.full_chat {
-            enums::ChatFull::Full(c) => match c.participants {
-                enums::ChatParticipants::Participants(x) => Some(x.participants.len() as i64),
-                _ => None,
-            },
-            enums::ChatFull::ChannelFull(c) => c.participants_count.map(i64::from),
-            _ => None,
+        // Thành viên; cảm xúc chat cho thả (app chỉ đưa các emoji này vào bảng chọn)
+        // + lệnh của các bot trong nhóm (gợi ý khi gõ «/»)
+        let (members, allowed, commands) = match f.full_chat {
+            enums::ChatFull::Full(c) => (
+                match c.participants {
+                    enums::ChatParticipants::Participants(x) => Some(x.participants.len() as i64),
+                    _ => None,
+                },
+                react::allowed_json(c.available_reactions.as_ref()),
+                bots::group_commands(c.bot_info.as_deref().unwrap_or(&[])),
+            ),
+            enums::ChatFull::ChannelFull(c) => (
+                c.participants_count.map(i64::from),
+                react::allowed_json(c.available_reactions.as_ref()),
+                bots::group_commands(&c.bot_info),
+            ),
+            _ => (None, json!("all"), json!([])),
         };
         let online = if channel {
             None
@@ -443,7 +473,8 @@ impl Core {
                 Err(_) => None,
             }
         };
-        Ok(json!({"kind": if channel { "channel" } else { "group" }, "members": members, "online": online}))
+        Ok(json!({"kind": if channel { "channel" } else { "group" }, "members": members, "online": online,
+                  "left": links::is_left(&p), "reactions": allowed, "commands": commands}))
     }
 
     /// Đang gõ / ghi âm / gửi ảnh… (chat riêng: người gõ = chính chat đó) → `typing`; người đổi trạng thái → `user.status`.
@@ -1265,6 +1296,9 @@ impl Core {
                                 (c.emit)(json!({"e": "msg.readOutbox", "peer": peer, "max_id": max_id}));
                             }
                             c.emit_presence(&r.raw);
+                            c.emit_extra(&r.raw);
+                            c.emit_poll(&r.raw);
+                            c.emit_pins(&r.raw);
                         }
                         _ => {}
                     },
@@ -1938,6 +1972,22 @@ impl Core {
                 }
             }
             "messages.search" => Box::pin(self.messages_search(a)).await,
+            "link.resolve" => Box::pin(self.link_resolve(a)).await,
+            "chats.join" => Box::pin(self.chat_join(a)).await,
+            "messages.react" => Box::pin(self.react(a)).await,
+            "reactions.available" => Box::pin(self.reactions_available()).await,
+            "messages.botCallback" => Box::pin(self.bot_callback(a)).await,
+            "messages.vote" => Box::pin(self.vote(a)).await,
+            "messages.sendPoll" => Box::pin(self.send_poll(a)).await,
+            "messages.pinned" => Box::pin(self.pinned_list(a)).await,
+            "map.tile" => Box::pin(self.map_tile(a)).await,
+            "map.address" => Box::pin(self.map_address(a)).await,
+            "messages.sendGeo" => Box::pin(self.send_geo(a)).await,
+            "vietqr.make" => self.vietqr_make(a),
+            "messages.sendContact" => Box::pin(self.send_contact(a)).await,
+            "messages.pin" => Box::pin(self.pin(a)).await,
+            "messages.scheduled" => Box::pin(self.scheduled_list(a)).await,
+            "messages.scheduledSend" | "messages.scheduledDelete" => Box::pin(self.scheduled_act(method, a)).await,
             "chat.info" => Box::pin(self.chat_info(a)).await,
             "topics.list" => Box::pin(self.topics_list(a)).await,
             "groups.create" => Box::pin(self.group_create(a)).await,
@@ -2524,6 +2574,7 @@ fn peer_json(p: &Peer) -> Value {
         "name": peer_name(p),
         "kind": peer_kind(p),
         "forum": is_forum(p),
+        "left": links::is_left(p),
         "username": p.username(),
         "photo": photo,
         "photo_dc": photo_dc,
@@ -2590,6 +2641,13 @@ fn links(m: &Message) -> Vec<String> {
                     }
                 }
                 MessageEntity::TextUrl(u) => push(u.url.clone()),
+                // @tên trong chữ: chạm tin → mở chat / kênh đó ngay trong app
+                MessageEntity::Mention(u) => {
+                    let (a, b) = (u.offset.max(0) as usize, (u.offset + u.length).max(0) as usize);
+                    if a < b && b <= utf16.len() {
+                        push(String::from_utf16_lossy(&utf16[a..b]));
+                    }
+                }
                 _ => {}
             }
         }
@@ -2818,8 +2876,25 @@ pub fn msg_json(m: &Message) -> Value {
         "voice": voice_json(m),
         "doc": doc_json(m),
         "links": links,
+        "reactions": react::msg_reactions(m),
+        "buttons": bots::inline_buttons(m),
+        "keyboard": bots::reply_keyboard(m),
+        "poll": poll::msg_poll(m),
+        "pinned": m.pinned(),
+        "geo": geo::msg_geo(m),
+        "contact": contact::msg_contact(m),
     })
 }
+
+mod bots;
+mod contact;
+mod geo;
+mod links;
+mod pins;
+mod poll;
+mod react;
+mod sched;
+mod vietqr;
 
 #[cfg(test)]
 mod tests {

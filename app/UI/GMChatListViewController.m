@@ -189,6 +189,7 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
                                                  name:UIApplicationDidBecomeActiveNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(muted:) name:GMChatMutedNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(loadFolders) name:GMFoldersChangedNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reloadRows) name:GMOpenChatChangedNotification object:nil];
 }
 
 - (void)dealloc {
@@ -249,9 +250,16 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
     if (!peer.length) return;
     NSUInteger i = 0;
     NSMutableDictionary *d = [self dialogFor:peer index:&i];
-    // Nhóm có chủ đề: danh sách chủ đề (nhảy tới một tin — kết quả tìm — thì mở màn mọi tin như cũ)
-    if ([(GMVal(d, @"forum") ?: GMVal(item, @"forum")) boolValue] && !msgId) {
+    // Chưa vào nhóm / kênh (link t.me, kết quả tìm): màn chat có thanh «Tham gia»
+    BOOL left = !d && [GMVal(item, @"left") boolValue];
+    // Nhóm có chủ đề: danh sách chủ đề (nhảy tới một tin — kết quả tìm — hoặc chưa vào nhóm thì mở màn mọi tin như cũ)
+    if ([(GMVal(d, @"forum") ?: GMVal(item, @"forum")) boolValue] && !msgId && !left) {
         [self openTopics:peer item:item dialog:d];
+        return;
+    }
+    GMAppDelegate *app = (GMAppDelegate *)[UIApplication sharedApplication].delegate;
+    if (app.detail && !msgId && [[app openPeer] isEqual:peer]) {
+        [app.detail popToRootViewControllerAnimated:YES];  // iPad: chat này đang mở bên phải → về màn chat
         return;
     }
     if (d) {
@@ -265,8 +273,11 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
     c.readOut = [GMVal(d, @"read_out") integerValue];
     c.title = [peer isEqual:self.myId] ? @"Tin nhắn đã lưu" : (GMVal(d, @"name") ?: GMVal(item, @"name") ?: GMVal(item, @"chat_name") ?: @"");
     c.jumpTo = msgId;
+    c.left = left;
+    c.joinHash = d ? nil : GMVal(item, @"hash");
     c.photo = GMVal(d, @"photo") ?: GMVal(item, @"photo");
     c.photoDc = GMVal(d, @"photo_dc") ?: GMVal(item, @"photo_dc");
+    if ([app showDetail:c]) return;  // iPad: mở bên phải, bên trái giữ nguyên
     // Mở từ mục khác của thanh dưới (Danh bạ, Cài đặt…): chuyển sang mục Chat
     if (self.tabBarController.selectedViewController != self.navigationController) {
         self.tabBarController.selectedViewController = self.navigationController;
@@ -291,6 +302,7 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
         [ws reloadRows];
         [[GMBackground shared] updateBadge];
     };
+    if ([(GMAppDelegate *)[UIApplication sharedApplication].delegate showDetail:t]) return;  // iPad: danh sách chủ đề bên phải
     if (self.tabBarController.selectedViewController != self.navigationController) {
         self.tabBarController.selectedViewController = self.navigationController;
     }
@@ -903,6 +915,11 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
                       : [GMVal(d, @"pinned") boolValue];
     c.pin.hidden = unread > 0 || !pinned;
     [c setFirst:indexPath.row == 0 last:indexPath.row == (NSInteger)_shown.count - 1];
+    // iPad: tô hàng của chat đang mở bên phải
+    NSString *open = [(GMAppDelegate *)[UIApplication sharedApplication].delegate openPeer];
+    if (open && [[GMVal(d, @"peer") description] isEqual:open]) {
+        ((UIImageView *)c.backgroundView).image = [GMTheme cardRow:c.first last:c.last selected:YES];
+    }
     [c setNeedsLayout];
     return c;
 }

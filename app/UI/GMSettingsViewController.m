@@ -11,6 +11,7 @@
 #import "GMPasscodeSettingsViewController.h"
 #import "GMAccountViewControllers.h"
 #import "GMAppDelegate.h"
+#import "GMQuickRepliesViewController.h"
 #import "GMChatListViewController.h"
 #import "GMTheme.h"
 #import "GMUpdate.h"
@@ -28,7 +29,8 @@ typedef NS_ENUM(NSInteger, GMSection) { GMSecProfile, GMSecMain, GMSecAbout, GMS
 
 /// Các mục chính (biểu tượng, tên) — thứ tự như Telegram 4.9.
 static NSArray *GMSettingsRows(void) {
-    return @[@[@"saved", @"Tin nhắn đã lưu"], @[@"folders", @"Thư mục chat"], @[@"notify", @"Thông báo"], @[@"lock", @"Quyền riêng tư và bảo mật"],
+    return @[@[@"saved", @"Tin nhắn đã lưu"], @[@"folders", @"Thư mục chat"], @[@"quick", @"Tin nhắn nhanh"], @[@"notify", @"Thông báo"],
+             @[@"lock", @"Quyền riêng tư và bảo mật"],
              @[@"storage", @"Dữ liệu và bộ nhớ"], @[@"stickers", @"Sticker"], @[@"theme", @"Giao diện"], @[@"proxy", @"Proxy"]];
 }
 
@@ -143,9 +145,12 @@ static NSArray *GMSettingsRows(void) {
             c.myId = GMVal(_me, @"id");
             c.kind = @"user";
             c.title = @"Tin nhắn đã lưu";
+            if ([(GMAppDelegate *)[UIApplication sharedApplication].delegate showDetail:c]) return;  // iPad: bên phải
             vc = c;
         } else if ([k isEqual:@"notify"]) {
             vc = [[GMNotifySettingsViewController alloc] init];
+        } else if ([k isEqual:@"quick"]) {
+            vc = [[GMQuickRepliesViewController alloc] init];
         } else if ([k isEqual:@"lock"]) {
             vc = [[GMPrivacyViewController alloc] init];
         } else if ([k isEqual:@"storage"]) {

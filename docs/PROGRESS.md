@@ -280,3 +280,19 @@
   iPhone 5: video 1080 × 1920, 200 giây (video anh gặp ở một nhóm của anh) chuyển trong 222 giây (27 khung / giây), tệp ra
   H.264 + AAC 480 × 854; iPad 1: 1019 giây → bật bỏ khung không làm tham chiếu (máy một nhân) 537 giây, video ra ~15 khung / giây,
   phát có hình. Ký hiệu iOS 5 / iOS 6: 485, thiếu 0.
+
+### Bản 1.4.0 — 11 tính năng: link t.me, cảm xúc, bot, bình chọn, ghim, nhắc hẹn, vị trí, iPad chia đôi, «/», VietQR, danh thiếp (17/11/2026)
+
+- Anh hỏi còn thiếu gì cấp thiết (tham khảo Roza) → làm lần lượt 11 mục (D31, D32). Lõi: 6 mô-đun mới trong `service/`
+  (links, react, bots, poll, pins, sched, geo, vietqr, contact), 14 phép thử (đọc link t.me, hex, VietQR / CRC, bỏ dấu).
+- Thử trên iPad 1 (iOS 5.1.1, bản debug — tài khoản khác máy chính; chỉ xem chat / kênh công khai, gửi chỉ trong Tin nhắn đã lưu):
+  t.me/<tên>, @tên trong tin, link mời sai mã → báo; thanh «Tham gia kênh» (không bấm); viên cảm xúc + số gọn (8,8K), bảng chọn
+  44 emoji vẽ được; chat bot trống: mô tả + «Bắt đầu»; thanh tin ghim + nhảy tới tin; «Nhắc tôi» → thanh «1 lời nhắc» → danh
+  sách → huỷ; bản đồ OSM + địa chỉ tiếng Việt; iPad chia đôi; gợi ý «/» chèn tin nhắn nhanh; thẻ VietQR. Đạt.
+- Chưa thử: gửi thật ở chat khác (cảm xúc, bỏ phiếu, ghim, vị trí, danh thiếp, ảnh QR — máy chính đang được dùng), bấm «Tham gia»
+  nhóm thật, nút callback của bot, chiều ngang iPad; OTA 1.3.x → 1.4.0 (iPad đang chạy app khác ở màn trước).
+- Bản phát hành 1.4.0: 4 053 136 byte, SHA-256 f325b959…8cae7; ký hiệu iOS 5 / iOS 6: 501, thiếu 0; cài lên iPad 1 khởi động
+  được (nền, VoIP). Nguồn Cydia giữ 1.2.1 / 1.3.0 / 1.4.0; `update-cydia-repo.sh` bỏ dấu cả `Packages` (iconv) — các .deb cũ
+  còn mô tả có dấu (Cydia 1.1.30 hiện «?»).
+- Công cụ: `tools-local/ios.sh` khớp đúng cả tên máy (anh thêm «iPhone 5 - đen», đổi máy chính thành «- trắng» — tên cũ khớp
+  nhầm phần đầu → trỏ sai máy).

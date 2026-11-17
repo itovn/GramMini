@@ -19,6 +19,19 @@
 #import "GMProxyViewController.h"
 #import "GMTitleView.h"
 #import "GMTheme.h"
+#import "GMLinks.h"
+#import "GMReactionPicker.h"
+#import "GMPollView.h"
+#import "GMScheduledViewController.h"
+#import "GMMap.h"
+#import "GMSuggestView.h"
+#import "GMQuickReplies.h"
+#import "GMQuickRepliesViewController.h"
+#import "GMVietQRViewController.h"
+#import "GMContactsViewController.h"
+#import "GMAlert.h"
+#import "GMAppDelegate.h"
+#import "GMChatListViewController.h"
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 
@@ -32,6 +45,10 @@ static const CGFloat kVoiceH = 44, kVoiceW = 210, kStickerMax = 150, kAttachW = 
 // Tệp không chú thích: giờ xuống một dòng riêng dưới dòng «cỡ · chạm để mở» (bong bóng tệp 220 điểm không đủ chỗ cho cả hai)
 static const CGFloat kDocTimeH = 10;
 static const CGFloat kTimeW0 = 6;  // khoảng trống trước giờ
+static const CGFloat kChipH = 24;  // viên cảm xúc dưới tin
+static const CGFloat kKbBtnH = 34;  // nút dưới tin của bot
+static const CGFloat kPinH = 44;    // thanh «Tin đã ghim» trên đầu màn
+static const CGFloat kSchedH = 30;  // thanh «… tin hẹn giờ» trên ô nhập
 
 #pragma mark - Mục xem bằng QuickLook (tên thật của tệp làm tiêu đề)
 
@@ -102,6 +119,12 @@ static const CGFloat kTimeW0 = 6;  // khoảng trống trước giờ
 @property (nonatomic, strong) AVPlayer *gifPlayer;
 @property (nonatomic, strong) AVPlayerLayer *gifLayer;
 @property (nonatomic, copy) NSString *gifKey;
+/// Các viên cảm xúc (trong bong bóng; tin sticker: dưới sticker).
+@property (nonatomic, strong) UIView *reacts;
+/// Nút dưới tin của bot (ngoài bong bóng).
+@property (nonatomic, strong) UIView *kbd;
+/// Bình chọn trong bong bóng.
+@property (nonatomic, strong) GMPollView *poll;
 - (void)playGif:(NSString *)path;
 - (void)stopGif;
 @end
@@ -238,6 +261,15 @@ static const CGFloat kTimeW0 = 6;  // khoảng trống trước giờ
         _stickerTime.backgroundColor = [GMTheme pillBackground];
         _stickerTime.layer.cornerRadius = 8;
         _stickerTime.clipsToBounds = YES;
+        _reacts = [[UIView alloc] init];
+        _reacts.hidden = YES;
+        [_bubble addSubview:_reacts];
+        _kbd = [[UIView alloc] init];
+        _kbd.hidden = YES;
+        [self.contentView addSubview:_kbd];
+        _poll = [[GMPollView alloc] init];
+        _poll.hidden = YES;
+        [_bubble addSubview:_poll];
         _pill = [self label:[UIFont boldSystemFontOfSize:13] in:self.contentView];
         _pill.textColor = [UIColor whiteColor];
         _pill.textAlignment = GMAlignCenter;
@@ -259,7 +291,60 @@ static const CGFloat kTimeW0 = 6;  // khoảng trống trước giờ
 
 @end
 
+#pragma mark - Viên cảm xúc
+
+/// Nút có khối xử lý (viên cảm xúc).
+@interface GMChip : UIButton
+@property (nonatomic, copy) void (^tap)(void);
+- (void)fire;
+@end
+
+@implementation GMChip
+- (void)fire {
+    if (self.tap) self.tap();
+}
+@end
+
+/// Emoji Telegram cho thả (reactions.available) — tải một lần mỗi lần mở app.
+static NSArray *gReactChoices;
+
+/// Số gọn như Telegram: 950, 1,2K, 78K, 1,5M (dấu phẩy thập phân).
+static NSString *GMCountText(long long n) {
+    if (n < 1000) return [NSString stringWithFormat:@"%lld", n];
+    double v = n < 1000000 ? n / 1000.0 : n / 1000000.0;
+    NSString *unit = n < 1000000 ? @"K" : @"M";
+    NSString *s = v < 10 ? [NSString stringWithFormat:@"%.1f", floor(v * 10) / 10] : [NSString stringWithFormat:@"%.0f", floor(v)];
+    if ([s hasSuffix:@".0"]) s = [s substringToIndex:s.length - 2];
+    return [[s stringByReplacingOccurrencesOfString:@"." withString:@","] stringByAppendingString:unit];
+}
+
+static NSString *GMChipTitle(NSDictionary *r) {
+    return [NSString stringWithFormat:@"%@ %@", [GMTheme reactionGlyph:GMVal(r, @"e")],
+                                      GMCountText([GMVal(r, @"n") longLongValue] ?: 1)];
+}
+
+/// Xếp các viên cảm xúc thành dòng trong bề ngang `maxW`; `frames` (có thể nil) nhận khung từng viên. Trả cỡ cả khối.
+static CGSize GMLayoutChips(NSArray *reacts, CGFloat maxW, NSMutableArray *frames) {
+    if (![reacts isKindOfClass:[NSArray class]] || !reacts.count) return CGSizeZero;
+    UIFont *f = [UIFont systemFontOfSize:13];
+    CGFloat x = 0, y = 0, w = 0;
+    for (NSDictionary *r in reacts) {
+        CGFloat cw = MIN(maxW, ceil([GMChipTitle(r) sizeWithFont:f].width) + 18);
+        if (x > 0 && x + cw > maxW) {
+            x = 0;
+            y += kChipH + 4;
+        }
+        [frames addObject:[NSValue valueWithCGRect:CGRectMake(x, y, cw, kChipH)]];
+        x += cw + 4;
+        w = MAX(w, x - 4);
+    }
+    return CGSizeMake(w, y + kChipH);
+}
+
 #pragma mark - Màn chat
+
+@interface GMChatViewController () <UIGestureRecognizerDelegate>
+@end
 
 typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMComposeEdit };
 
@@ -300,6 +385,27 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     NSDictionary *_menuMsg;  // tin vừa nhấn giữ
     NSMutableDictionary *_tgsPaths;  // sticker động: khoá ô → tệp .tgs đã tải
     NSNumber *_topicNext;            // màn chủ đề: offset_id cho trang tin cũ tiếp theo
+    id _allowedReacts;               // cảm xúc chat cho thả (chat.status): @"all" | @"none" | mảng emoji
+    UIView *_joinBar;                // thanh nút lớn thay ô nhập: «Tham gia nhóm / kênh», «Bắt đầu» (bot)
+    UIButton *_joinBtn;
+    BOOL _bigBarOn;
+    NSDictionary *_kbdMarkup;        // bàn phím trả lời của bot đang dùng (tin gần nhất có bàn phím)
+    UIButton *_kbdBtn;               // nút bật / tắt bàn phím của bot trong ô nhập
+    BOOL _kbdOn;
+    BOOL _historyLoaded;
+    UIView *_botCard;                // chat bot trống: thẻ «Bot này làm được gì?»
+    NSMutableDictionary *_pollSel;   // bình chọn nhiều lựa chọn: mã tin → các lựa chọn đã đánh dấu (chưa bấm «Bỏ phiếu»)
+    UIView *_pinBar;                 // thanh «Tin đã ghim»
+    UILabel *_pinTitle, *_pinText;
+    NSArray *_pins;                  // tin đang ghim, mới → cũ
+    NSInteger _pinIdx;               // tin ghim đang hiện trên thanh (chạm → nhảy tới, rồi sang tin cũ hơn)
+    BOOL _pinHidden;                 // đã bấm ✕ (ẩn tới lần mở chat sau)
+    UIButton *_schedBar;             // «🕓 N tin hẹn giờ ›» (Tin nhắn đã lưu: lời nhắc)
+    NSInteger _schedCount;
+    GMSuggestView *_suggest;         // gõ «/»: lệnh của bot + tin nhắn nhanh
+    NSArray *_commands;              // lệnh của bot (chat bot / các bot trong nhóm): [{c, d}]
+    UIView *_datePanel;              // chọn ngày giờ hẹn gửi
+    UIDatePicker *_datePicker;
 }
 
 #pragma mark Dựng
@@ -421,6 +527,11 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     [_send addTarget:self action:@selector(sendCancel) forControlEvents:UIControlEventTouchUpOutside | UIControlEventTouchCancel];
     [_send addTarget:self action:@selector(sendDragExit) forControlEvents:UIControlEventTouchDragExit];
     [_send addTarget:self action:@selector(sendDragEnter) forControlEvents:UIControlEventTouchDragEnter];
+    // Có chữ: nhấn giữ «Gửi» → hẹn giờ gửi / nhắc tôi / gửi không âm báo (ô trống thì nút là mic — cử chỉ không bắt đầu)
+    UILongPressGestureRecognizer *slp = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(sendLongPress:)];
+    slp.minimumPressDuration = 0.5;
+    slp.delegate = self;
+    [_send addGestureRecognizer:slp];
     [_bar addSubview:_send];
     _recLabel = [[UILabel alloc] init];
     _recLabel.font = [UIFont systemFontOfSize:15];
@@ -438,6 +549,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     _spin.hidesWhenStopped = YES;
     [self.view addSubview:_spin];
     [self layoutBars:NO];
+    if (self.left) [self setJoinBar:YES];
 
     _titleView = [[GMTitleView alloc] init];
     _titleView.title = self.title;
@@ -474,6 +586,13 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     [nc addObserver:self selector:@selector(filesChanged) name:GMFileStateNotification object:nil];
     [self loadOlder];
     [self performSelector:@selector(loadOutbox) withObject:nil afterDelay:0.5];
+    [self loadPins];
+    [self loadScheduled];
+    if (!gReactChoices) {
+        [GMCore call:@"reactions.available" args:nil done:^(id ok, NSDictionary *err) {
+            if ([ok isKindOfClass:[NSArray class]] && [ok count]) gReactChoices = ok;
+        }];
+    }
 }
 
 - (void)dealloc {
@@ -510,22 +629,908 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
 - (void)layoutBars:(BOOL)keepBottom {
     CGRect b = self.view.bounds;
     BOOL bottom = keepBottom && [self nearBottom];
-    CGFloat barH = _bar.hidden ? 0 : _barH;
+    CGFloat barH = !_bar.hidden ? _barH : (_bigBarOn ? kBarH : 0);
     CGFloat panelH = (_compose != GMComposeNormal) ? kPanelH : 0;
     CGFloat y = b.size.height - _kbBottom - barH;
     _bar.frame = CGRectMake(0, y, b.size.width, _barH);
     _attach.frame = CGRectMake(2, _barH - 46, kAttachW, 44);
     _inputBox.frame = CGRectMake(kAttachW + 4, 6, b.size.width - kAttachW - 72, _barH - 12);
-    _input.frame = CGRectMake(4, 0, _inputBox.bounds.size.width - 36, _inputBox.bounds.size.height);
+    _input.frame = CGRectMake(4, 0, _inputBox.bounds.size.width - (_kbdMarkup ? 68 : 36), _inputBox.bounds.size.height);
+    _kbdBtn.hidden = !_kbdMarkup;
+    _kbdBtn.frame = CGRectMake(_inputBox.bounds.size.width - 66, _inputBox.bounds.size.height - kInputMinH, 32, kInputMinH);
+    _botCard.center = CGPointMake(floor(b.size.width / 2), floor((y - panelH) / 2));
     _stickerBtn.frame = CGRectMake(_inputBox.bounds.size.width - 34, _inputBox.bounds.size.height - kInputMinH, 32, kInputMinH);
     if (_stickersOpen) _stickers.frame = CGRectMake(0, b.size.height - kGMStickerPanelH, b.size.width, kGMStickerPanelH);
     _recLabel.frame = CGRectInset(_inputBox.frame, 10, 2);
     _send.frame = CGRectMake(b.size.width - 66, _barH - 46, 62, 44);
     _panel.hidden = panelH == 0;
     _panel.frame = CGRectMake(0, y - panelH, b.size.width, kPanelH);
-    _table.frame = CGRectMake(0, 0, b.size.width, y - panelH);
-    _upBar.frame = CGRectMake(0, 0, b.size.width, 34);
+    CGFloat pinH = (_pinBar && !_pinBar.hidden) ? kPinH : 0;
+    CGFloat schedH = (_schedCount > 0 && !_bar.hidden) ? kSchedH : 0;
+    _schedBar.hidden = schedH == 0;
+    _schedBar.frame = CGRectMake(0, y - panelH - kSchedH, b.size.width, kSchedH);
+    _pinBar.frame = CGRectMake(0, 0, b.size.width, kPinH);
+    _table.frame = CGRectMake(0, pinH, b.size.width, y - panelH - pinH - schedH);
+    _upBar.frame = CGRectMake(0, pinH, b.size.width, 34);
+    if (_suggest && !_suggest.hidden) {
+        CGFloat sh = [_suggest wantedHeight];
+        _suggest.frame = CGRectMake(0, y - panelH - sh, b.size.width, sh);
+    }
+    _joinBar.frame = CGRectMake(0, b.size.height - kBarH, b.size.width, kBarH);
     if (bottom) [self scrollToBottom:NO];
+}
+
+#pragma mark Tham gia nhóm / kênh
+
+/// Chưa vào nhóm / kênh (mở từ link t.me, kết quả tìm): thanh «Tham gia nhóm / kênh» ở chỗ ô nhập.
+- (void)setJoinBar:(BOOL)on {
+    self.left = on;
+    if (on) [self showBigBar:[self.kind isEqual:@"channel"] ? @"Tham gia kênh" : @"Tham gia nhóm" action:@selector(joinTapped)];
+    else [self hideBigBar];
+}
+
+/// Thanh một nút lớn ở chỗ ô nhập (Tham gia / Bắt đầu).
+- (void)showBigBar:(NSString *)title action:(SEL)action {
+    if (!_joinBar) {
+        // Khung ban đầu đúng cỡ nút (co giãn tự động tính theo khung này — khung 0 làm nút cao gấp đôi, chữ lệch xuống)
+        _joinBar = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, kBarH)];
+        _joinBar.backgroundColor = [UIColor clearColor];
+        UIImageView *bg = [[UIImageView alloc] initWithFrame:CGRectMake(0, 0, 320, kBarH)];
+        bg.image = [GMTheme glassBar];
+        bg.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [_joinBar addSubview:bg];
+        _joinBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+        _joinBtn.frame = CGRectMake(0, 0, 320, kBarH);
+        _joinBtn.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        _joinBtn.titleLabel.font = [UIFont boldSystemFontOfSize:17];
+        [_joinBtn setTitleColor:[GMTheme accent] forState:UIControlStateNormal];
+        [_joinBtn setTitleColor:[GMTheme secondaryText] forState:UIControlStateDisabled];
+        [_joinBar addSubview:_joinBtn];
+        [self.view addSubview:_joinBar];
+    }
+    [_joinBtn removeTarget:nil action:NULL forControlEvents:UIControlEventAllEvents];
+    [_joinBtn addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
+    [_joinBtn setTitle:title forState:UIControlStateNormal];
+    _bigBarOn = YES;
+    _joinBar.hidden = NO;
+    _bar.hidden = YES;
+    [_input resignFirstResponder];
+    [self layoutBars:YES];
+}
+
+- (void)hideBigBar {
+    _bigBarOn = NO;
+    _joinBar.hidden = YES;
+    _bar.hidden = [self.kind isEqual:@"channel"];
+    [self layoutBars:YES];
+}
+
+#pragma mark Bot
+
+/// Chat riêng với bot chưa có tin: thẻ mô tả «Bot này làm được gì?» + nút «Bắt đầu» (gửi /start).
+- (void)checkBotStart {
+    BOOL bot = [GMVal(_status, @"bot") boolValue] && [self.kind isEqual:@"user"];
+    if (!bot || !_historyLoaded) return;
+    if (_msgs.count) {
+        _botCard.hidden = YES;
+        return;
+    }
+    NSString *desc = GMVal(GMVal(_status, @"bot_info"), @"description");
+    if (desc.length && !_botCard) {
+        UILabel *l = [[UILabel alloc] init];
+        l.numberOfLines = 0;
+        l.font = [UIFont systemFontOfSize:14];
+        l.textColor = [UIColor whiteColor];
+        l.backgroundColor = [UIColor clearColor];
+        l.textAlignment = GMAlignCenter;
+        NSString *t = [NSString stringWithFormat:@"Bot này làm được gì?\n\n%@", desc];
+        CGFloat w = MIN(300, self.view.bounds.size.width - 40);
+        CGSize s = [t sizeWithFont:l.font constrainedToSize:CGSizeMake(w - 28, 400) lineBreakMode:GMWordWrap];
+        l.text = t;
+        l.frame = CGRectMake(14, 12, w - 28, ceil(s.height));
+        _botCard = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, ceil(s.height) + 24)];
+        _botCard.backgroundColor = [GMTheme pillBackground];
+        _botCard.layer.cornerRadius = 12;
+        [_botCard addSubview:l];
+        [self.view insertSubview:_botCard aboveSubview:_table];
+    }
+    _botCard.hidden = NO;
+    if (!_bigBarOn && !self.left) [self showBigBar:@"Bắt đầu" action:@selector(startTapped)];
+    [self layoutBars:NO];
+}
+
+- (void)startTapped {
+    [self hideBigBar];
+    _botCard.hidden = YES;
+    [self sendText:@"/start" reply:nil];
+}
+
+/// Bàn phím trả lời của bot đang dùng: tin gần nhất có bàn phím (bot gỡ bàn phím → không; bàn phím dùng một lần mà mình đã
+/// nhắn sau đó → không). Có bàn phím mới từ tin mới nhất → tự hiện (thay bàn phím máy).
+- (void)updateBotKeyboard {
+    NSDictionary *mk = nil;
+    BOOL sawOut = NO, newest = YES;
+    BOOL fromNewest = NO;
+    for (NSInteger i = (NSInteger)_msgs.count - 1; i >= 0; i--) {
+        NSDictionary *m = [_msgs objectAtIndex:i];
+        if ([self outgoing:m]) {
+            sawOut = YES;
+            newest = NO;
+            continue;
+        }
+        NSDictionary *k = GMVal(m, @"keyboard");
+        if (![k isKindOfClass:[NSDictionary class]]) {
+            newest = NO;
+            continue;
+        }
+        if ([GMVal(k, @"hide") boolValue] || ([GMVal(k, @"single") boolValue] && sawOut)) break;
+        mk = k;
+        fromNewest = newest;
+        break;
+    }
+    if ((mk == nil && _kbdMarkup == nil) || [mk isEqual:_kbdMarkup]) return;
+    _kbdMarkup = mk;
+    if (!_kbdBtn) {
+        _kbdBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+        [_kbdBtn addTarget:self action:@selector(toggleBotKeyboard) forControlEvents:UIControlEventTouchUpInside];
+        [_inputBox addSubview:_kbdBtn];
+    }
+    [self layoutBars:NO];
+    if (!mk) {
+        if (_kbdOn) [self setBotKeyboard:NO];
+        return;
+    }
+    if (_kbdOn) [self setBotKeyboard:YES];  // bàn phím mới thay bàn phím cũ đang mở
+    else if (fromNewest && !_bar.hidden && self.navigationController.topViewController == self) [self setBotKeyboard:YES];
+    else [_kbdBtn setImage:[GMTheme icon:@"botkeys"] forState:UIControlStateNormal];
+}
+
+- (void)toggleBotKeyboard {
+    [self setBotKeyboard:!_kbdOn];
+}
+
+- (void)setBotKeyboard:(BOOL)on {
+    if (on && !_kbdMarkup) on = NO;
+    if (on && _stickersOpen) [self closeStickers:NO];
+    _kbdOn = on;
+    _input.inputView = on ? [self botKeyboardView] : nil;
+    [_kbdBtn setImage:[GMTheme icon:on ? @"keyboard" : @"botkeys"] forState:UIControlStateNormal];
+    if ([_input isFirstResponder]) [_input reloadInputViews];
+    else if (on) [_input becomeFirstResponder];
+}
+
+/// Bàn phím của bot (đặt làm inputView của ô nhập — hiện đúng chỗ bàn phím máy): các hàng phím, cuộn nếu nhiều.
+- (UIView *)botKeyboardView {
+    NSArray *rows = GMVal(_kbdMarkup, @"rows");
+    CGFloat W = self.view.bounds.size.width, rowH = 46;
+    CGFloat contentH = rows.count * rowH + 8;
+    UIView *v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, W, MIN(MAX(contentH, 100), 216))];
+    v.backgroundColor = [GMTheme dark] ? [UIColor colorWithRed:0.11 green:0.14 blue:0.18 alpha:1]
+                                       : [UIColor colorWithRed:0.82 green:0.84 blue:0.87 alpha:1];
+    UIScrollView *sc = [[UIScrollView alloc] initWithFrame:v.bounds];
+    sc.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    sc.contentSize = CGSizeMake(W, contentH);
+    [v addSubview:sc];
+    __weak GMChatViewController *ws = self;
+    for (NSUInteger r = 0; r < rows.count; r++) {
+        NSArray *row = [rows objectAtIndex:r];
+        if (![row isKindOfClass:[NSArray class]] || !row.count) continue;
+        CGFloat bw = floor((W - 8 - 6 * (row.count - 1)) / row.count);
+        for (NSUInteger i = 0; i < row.count; i++) {
+            NSDictionary *b = [row objectAtIndex:i];
+            GMChip *k = [GMChip buttonWithType:UIButtonTypeCustom];
+            k.frame = CGRectMake(4 + i * (bw + 6), 6 + r * rowH, bw, rowH - 8);
+            k.backgroundColor = [GMTheme dark] ? [UIColor colorWithRed:0.2 green:0.25 blue:0.31 alpha:1] : [UIColor whiteColor];
+            k.layer.cornerRadius = 6;
+            k.layer.shadowColor = [UIColor blackColor].CGColor;
+            k.layer.shadowOpacity = 0.25;
+            k.layer.shadowRadius = 0.5;
+            k.layer.shadowOffset = CGSizeMake(0, 1);
+            k.titleLabel.font = [UIFont systemFontOfSize:15];
+            k.titleLabel.lineBreakMode = GMTailTruncation;
+            k.titleEdgeInsets = UIEdgeInsetsMake(0, 4, 0, 4);
+            [k setTitle:GMVal(b, @"t") forState:UIControlStateNormal];
+            [k setTitleColor:[GMTheme text] forState:UIControlStateNormal];
+            k.tap = ^{ [ws botKey:b]; };
+            [k addTarget:k action:@selector(fire) forControlEvents:UIControlEventTouchUpInside];
+            [sc addSubview:k];
+        }
+    }
+    return v;
+}
+
+/// Chạm phím của bàn phím bot: phím chữ → gửi chữ đó (bàn phím dùng một lần thì đóng).
+- (void)botKey:(NSDictionary *)b {
+    NSString *k = GMVal(b, @"k");
+    if ([k isEqual:@"phone"]) {
+        // Phím «gửi số điện thoại» của bot: hỏi trước rồi gửi danh thiếp của mình
+        __weak GMChatViewController *ws = self;
+        GMAlertShow(@"Chia sẻ số điện thoại?", @"Bot sẽ thấy số điện thoại của bạn.", @"Huỷ", @"Chia sẻ", ^(NSInteger i) {
+            if (i == 1) [ws sendMyContact];
+        });
+        return;
+    }
+    if ([k isEqual:@"geo"]) {
+        [_input resignFirstResponder];
+        [self pickLocation];  // phím «gửi vị trí»: chọn vị trí trên bản đồ rồi gửi
+        return;
+    }
+    if (![k isEqual:@"text"]) {
+        [GMTheme toast:@"GramMini chưa gửi được loại phím này." in:self.view];
+        return;
+    }
+    if ([GMVal(_kbdMarkup, @"single") boolValue]) {
+        [self setBotKeyboard:NO];
+        [_input resignFirstResponder];
+    }
+    [self sendText:GMVal(b, @"t") reply:nil];
+}
+
+/// Cao thêm cho hàng có nút dưới tin.
+- (CGFloat)kbHeight:(NSDictionary *)m {
+    NSArray *rows = GMVal(m, @"buttons");
+    if (![rows isKindOfClass:[NSArray class]] || !rows.count) return 0;
+    return rows.count * (kKbBtnH + 4) + 2;
+}
+
+/// Đặt các nút dưới tin của bot vào vùng `area` (toạ độ trong ô).
+- (void)fillButtons:(GMBubbleCell *)c msg:(NSDictionary *)m area:(CGRect)area {
+    for (UIView *v in [c.kbd.subviews copy]) [v removeFromSuperview];
+    NSArray *rows = GMVal(m, @"buttons");
+    c.kbd.hidden = ![rows isKindOfClass:[NSArray class]] || !rows.count;
+    if (c.kbd.hidden) return;
+    c.kbd.frame = area;
+    __weak GMChatViewController *ws = self;
+    for (NSUInteger r = 0; r < rows.count; r++) {
+        NSArray *row = [rows objectAtIndex:r];
+        if (![row isKindOfClass:[NSArray class]] || !row.count) continue;
+        CGFloat bw = (area.size.width - 4 * (row.count - 1)) / row.count;
+        for (NSUInteger i = 0; i < row.count; i++) {
+            NSDictionary *b = [row objectAtIndex:i];
+            GMChip *btn = [GMChip buttonWithType:UIButtonTypeCustom];
+            btn.frame = CGRectMake(floor(i * (bw + 4)), r * (kKbBtnH + 4), floor(bw), kKbBtnH);
+            btn.backgroundColor = [GMTheme pillBackground];
+            btn.layer.cornerRadius = 8;
+            btn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+            btn.titleLabel.lineBreakMode = GMTailTruncation;
+            btn.titleEdgeInsets = UIEdgeInsetsMake(0, 6, 0, 6);
+            NSString *t = GMVal(b, @"t") ?: @"";
+            if ([GMVal(b, @"k") isEqual:@"url"]) t = [t stringByAppendingString:@" ↗"];
+            [btn setTitle:t forState:UIControlStateNormal];
+            [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+            btn.tap = ^{ [ws inlineButton:b msg:m]; };
+            [btn addTarget:btn action:@selector(fire) forControlEvents:UIControlEventTouchUpInside];
+            [c.kbd addSubview:btn];
+        }
+    }
+}
+
+/// Chạm nút dưới tin: link → mở (t.me trong app); callback → hỏi bot, hiện câu trả lời; sao chép; hồ sơ người.
+- (void)inlineButton:(NSDictionary *)b msg:(NSDictionary *)m {
+    NSString *k = GMVal(b, @"k");
+    if ([k isEqual:@"url"]) {
+        [GMLinks open:GMVal(b, @"u") in:self.view];
+    } else if ([k isEqual:@"copy"]) {
+        [UIPasteboard generalPasteboard].string = GMVal(b, @"c") ?: @"";
+        [GMTheme toast:@"Đã sao chép" in:self.view];
+    } else if ([k isEqual:@"user"]) {
+        [GMLinks open:[NSString stringWithFormat:@"tg://user?id=%@", GMVal(b, @"id")] in:self.view];
+    } else if ([k isEqual:@"cb"]) {
+        [UIApplication sharedApplication].networkActivityIndicatorVisible = YES;
+        [GMCore call:@"messages.botCallback" args:@{@"peer": self.peer, @"id": GMVal(m, @"id"), @"data": GMVal(b, @"d") ?: @""}
+                done:^(id ok, NSDictionary *err) {
+                    [UIApplication sharedApplication].networkActivityIndicatorVisible = NO;
+                    if (err) {
+                        [GMTheme toast:GMErrorText(err) in:self.view];
+                        return;
+                    }
+                    NSString *text = GMVal(ok, @"message"), *url = GMVal(ok, @"url");
+                    GMLog(@"nút bot: trả lời %@%@", text.length ? @"có chữ" : @"không chữ", url.length ? @" + link" : @"");
+                    if (text.length) {
+                        if ([GMVal(ok, @"alert") boolValue]) GMAlertShow(nil, text, @"OK", nil, nil);
+                        else [GMTheme toast:text in:self.view];
+                    }
+                    if (url.length) [GMLinks open:url in:self.view];
+                }];
+    } else {
+        [GMTheme toast:@"GramMini chưa làm được nút này." in:self.view];
+    }
+}
+
+- (void)debugInlineButtonFromBottom:(NSInteger)k row:(NSInteger)r col:(NSInteger)c {
+    NSInteger row = [self rowFromBottom:k];
+    if (row == NSNotFound) return;
+    NSDictionary *m = [[_rows objectAtIndex:row] objectForKey:@"msg"];
+    NSArray *rows = GMVal(m, @"buttons");
+    if (r < 0 || r >= (NSInteger)rows.count || c < 0 || c >= (NSInteger)[[rows objectAtIndex:r] count]) {
+        GMLog(@"[thử] không có nút %ld/%ld (tin có %lu hàng nút)", (long)r, (long)c, (unsigned long)rows.count);
+        return;
+    }
+    [self inlineButton:[[rows objectAtIndex:r] objectAtIndex:c] msg:m];
+}
+
+- (void)debugBotKey:(NSInteger)i {
+    NSInteger n = 0;
+    for (NSArray *row in GMVal(_kbdMarkup, @"rows")) {
+        for (NSDictionary *b in row) {
+            if (n++ == i) {
+                [self botKey:b];
+                return;
+            }
+        }
+    }
+    GMLog(@"[thử] bàn phím bot: không có phím %ld (%@)", (long)i, _kbdMarkup ? @"có bàn phím" : @"không có bàn phím");
+}
+
+- (void)debugToggleBotKeyboard {
+    [self toggleBotKeyboard];
+}
+
+#pragma mark Hẹn giờ gửi / nhắc tôi
+
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)g {
+    if (g.view == _send) {
+        NSString *t = [_input.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        return t.length > 0 && !_recorder && _compose != GMComposeEdit && ![self micMode];
+    }
+    return YES;
+}
+
+- (void)sendLongPress:(UILongPressGestureRecognizer *)g {
+    if (g.state == UIGestureRecognizerStateBegan) [self showScheduleSheet];
+}
+
+/// Mốc giờ hôm nay + `days` ngày, lúc `hour`:00 (giờ máy).
+- (NSTimeInterval)dayOffset:(NSInteger)days hour:(NSInteger)hour {
+    NSCalendar *cal = [NSCalendar currentCalendar];
+    NSDateComponents *c = [cal components:NSYearCalendarUnit | NSMonthCalendarUnit | NSDayCalendarUnit fromDate:[NSDate date]];
+    c.day += days;
+    c.hour = hour;
+    return [[cal dateFromComponents:c] timeIntervalSince1970];
+}
+
+/// Nhấn giữ «Gửi»: hẹn giờ gửi tin đang soạn (Tin nhắn đã lưu: «Nhắc tôi» — tới giờ Telegram gửi tin, máy báo như tin mới) hoặc gửi
+/// không âm báo.
+- (void)showScheduleSheet {
+    NSString *t = [_input.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (!t.length) return;
+    BOOL saved = [self isSaved];
+    NSMutableArray *times = [NSMutableArray array];  // giờ Unix; -1 = chọn ngày giờ; -2 = gửi không âm báo
+    UIActionSheet *s = [[UIActionSheet alloc] initWithTitle:saved ? @"Nhắc tôi" : @"Hẹn giờ gửi" delegate:self cancelButtonTitle:nil
+                                     destructiveButtonTitle:nil otherButtonTitles:nil];
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    NSArray *quick = @[@[@"Sau 30 phút", @(now + 1800)], @[@"Sau 1 giờ", @(now + 3600)], @[@"Sau 3 giờ", @(now + 3 * 3600)]];
+    for (NSArray *q in quick) {
+        [s addButtonWithTitle:[q objectAtIndex:0]];
+        [times addObject:[q objectAtIndex:1]];
+    }
+    NSTimeInterval tonight = [self dayOffset:0 hour:20];
+    if (tonight > now + 600) {
+        [s addButtonWithTitle:@"Tối nay lúc 20:00"];
+        [times addObject:@(tonight)];
+    }
+    [s addButtonWithTitle:@"Sáng mai lúc 8:00"];
+    [times addObject:@([self dayOffset:1 hour:8])];
+    [s addButtonWithTitle:@"Chọn ngày giờ…"];
+    [times addObject:@(-1)];
+    if (!saved) {
+        [s addButtonWithTitle:@"Gửi không âm báo"];
+        [times addObject:@(-2)];
+    }
+    s.cancelButtonIndex = [s addButtonWithTitle:@"Huỷ"];
+    objc_setAssociatedObject(s, "sched", times, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [s showInView:self.view];
+}
+
+/// Gửi chữ đang soạn: `at` > 0 → hẹn giờ (máy chủ giữ tin, tới giờ mới gửi); `silent` → gửi không âm báo.
+- (void)sendComposed:(NSTimeInterval)at silent:(BOOL)silent {
+    NSString *t = [_input.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (!t.length) return;
+    NSNumber *reply = _compose == GMComposeReply ? GMVal(_target, @"id") : nil;
+    _input.text = @"";
+    [self textViewDidChange:_input];
+    [self setCompose:GMComposeNormal target:nil];
+    if (at <= 0) {
+        [self sendText:t reply:reply silent:silent];
+        return;
+    }
+    NSMutableDictionary *args = [@{@"peer": self.peer, @"text": t, @"schedule": @((long long)at)} mutableCopy];
+    if (reply) [args setObject:reply forKey:@"reply_to"];
+    if (self.topic) [args setObject:self.topic forKey:@"topic"];
+    [GMCore call:@"messages.send" args:args done:^(id ok, NSDictionary *err) {
+        if (err) {
+            [GMTheme toast:GMErrorText(err) in:self.view];
+            if (!_input.text.length) {
+                _input.text = t;
+                [self textViewDidChange:_input];
+            }
+            return;
+        }
+        GMLog(@"đã hẹn giờ một tin");
+        [GMTheme toast:[NSString stringWithFormat:@"%@ %@", [self isSaved] ? @"Sẽ nhắc lúc" : @"Sẽ gửi lúc", GMScheduleText(at)]
+                    in:self.view];
+        [self loadScheduled];
+    }];
+}
+
+- (void)showDatePicker {
+    [_input resignFirstResponder];
+    [_datePanel removeFromSuperview];
+    CGRect b = self.view.bounds;
+    UIView *dim = [[UIView alloc] initWithFrame:b];
+    dim.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    dim.backgroundColor = [UIColor colorWithWhite:0 alpha:0.3];
+    UIView *panel = [[UIView alloc] initWithFrame:CGRectMake(0, b.size.height - 260, b.size.width, 260)];
+    panel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+    panel.backgroundColor = [GMTheme dark] ? [UIColor colorWithWhite:0.12 alpha:1] : [UIColor whiteColor];
+    [dim addSubview:panel];
+    UIToolbar *tb = [[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, b.size.width, 44)];
+    tb.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    if ([GMTheme dark]) tb.barStyle = UIBarStyleBlack;
+    tb.items = @[
+        [[UIBarButtonItem alloc] initWithTitle:@"Huỷ" style:UIBarButtonItemStyleBordered target:self action:@selector(dismissDatePicker)],
+        [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:NULL],
+        [[UIBarButtonItem alloc] initWithTitle:[self isSaved] ? @"Đặt lời nhắc" : @"Hẹn giờ" style:UIBarButtonItemStyleDone target:self
+                                        action:@selector(confirmDatePicker)],
+    ];
+    [panel addSubview:tb];
+    UIDatePicker *dp = [[UIDatePicker alloc] initWithFrame:CGRectMake(floor((b.size.width - 320) / 2), 44, 320, 216)];
+    dp.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
+    dp.datePickerMode = UIDatePickerModeDateAndTime;
+    dp.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"vi_VN"];
+    dp.minimumDate = [NSDate dateWithTimeIntervalSinceNow:60];
+    dp.maximumDate = [NSDate dateWithTimeIntervalSinceNow:364 * 86400];
+    dp.date = [NSDate dateWithTimeIntervalSinceNow:3600];
+    [panel addSubview:dp];
+    [self.view addSubview:dim];
+    _datePanel = dim;
+    _datePicker = dp;
+}
+
+- (void)dismissDatePicker {
+    [_datePanel removeFromSuperview];
+    _datePanel = nil;
+    _datePicker = nil;
+}
+
+- (void)confirmDatePicker {
+    NSTimeInterval at = _datePicker.date.timeIntervalSince1970;
+    [self dismissDatePicker];
+    [self sendComposed:at silent:NO];
+}
+
+/// Số tin hẹn giờ của chat → thanh «🕓 N tin hẹn giờ ›» trên ô nhập.
+- (void)loadScheduled {
+    if ([self.kind isEqual:@"channel"] || self.left) return;
+    [GMCore call:@"messages.scheduled" args:@{@"peer": self.peer} done:^(id ok, NSDictionary *err) {
+        if (![ok isKindOfClass:[NSArray class]]) return;
+        NSInteger n = 0;
+        for (NSDictionary *m in ok) {
+            if ([self inTopic:m]) n++;
+        }
+        [self setScheduledCount:n];
+    }];
+}
+
+- (void)setScheduledCount:(NSInteger)n {
+    if (n > 0 && !_schedBar) {
+        _schedBar = [UIButton buttonWithType:UIButtonTypeCustom];
+        [_schedBar setBackgroundImage:[GMTheme glassBar] forState:UIControlStateNormal];
+        _schedBar.titleLabel.font = [UIFont boldSystemFontOfSize:13];
+        [_schedBar setTitleColor:[GMTheme accent] forState:UIControlStateNormal];
+        [_schedBar addTarget:self action:@selector(openScheduled) forControlEvents:UIControlEventTouchUpInside];
+        [self.view addSubview:_schedBar];
+    }
+    BOOL changed = (n > 0) != (_schedCount > 0);
+    _schedCount = n;
+    [_schedBar setTitle:[NSString stringWithFormat:@"🕓 %ld %@ ›", (long)n, [self isSaved] ? @"lời nhắc" : @"tin hẹn giờ"]
+               forState:UIControlStateNormal];
+    if (changed) [self layoutBars:YES];
+}
+
+- (void)openScheduled {
+    GMScheduledViewController *s = [[GMScheduledViewController alloc] init];
+    s.peer = self.peer;
+    s.saved = [self isSaved];
+    __weak GMChatViewController *ws = self;
+    s.changed = ^(NSInteger count) { [ws setScheduledCount:count]; };
+    [self.navigationController pushViewController:s animated:YES];
+}
+
+- (void)debugScheduleSheet {
+    [self showScheduleSheet];
+}
+
+- (void)debugOpenScheduled {
+    [self openScheduled];
+}
+
+#pragma mark Danh thiếp
+
+- (NSString *)contactName:(NSDictionary *)card {
+    return [[NSString stringWithFormat:@"%@ %@", GMVal(card, @"first") ?: @"", GMVal(card, @"last") ?: @""]
+            stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+}
+
+/// Chạm danh thiếp: nhắn tin (người có Telegram), gọi (iPhone), chép số.
+- (void)contactTapped:(NSDictionary *)card {
+    NSString *name = [self contactName:card];
+    NSString *phone = [GMVal(card, @"phone") length] ? [@"+" stringByAppendingString:[GMVal(card, @"phone") stringByReplacingOccurrencesOfString:@"+" withString:@""]] : @"";
+    UIActionSheet *s = [[UIActionSheet alloc] initWithTitle:[NSString stringWithFormat:@"%@\n%@", name, phone] delegate:self
+                                          cancelButtonTitle:nil destructiveButtonTitle:nil otherButtonTitles:nil];
+    NSMutableArray *acts = [NSMutableArray array];
+    if (GMVal(card, @"user")) {
+        [s addButtonWithTitle:@"Nhắn tin"];
+        [acts addObject:@"chat"];
+    }
+    if (phone.length && [[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:@"tel:0"]]) {
+        [s addButtonWithTitle:@"Gọi"];
+        [acts addObject:@"call"];
+    }
+    if (phone.length) {
+        [s addButtonWithTitle:@"Chép số"];
+        [acts addObject:@"copy"];
+    }
+    s.cancelButtonIndex = [s addButtonWithTitle:@"Huỷ"];
+    objc_setAssociatedObject(s, "card", acts, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(s, "cardData", card, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [s showInView:self.view];
+}
+
+/// Đính kèm → «Danh thiếp»: chọn một người trong danh bạ → gửi tên + số của họ.
+- (void)pickContactCard {
+    GMContactsViewController *c = [[GMContactsViewController alloc] initWithStyle:UITableViewStylePlain];
+    c.myId = self.myId;
+    c.title = @"Gửi danh thiếp";
+    __weak GMChatViewController *ws = self;
+    c.pick = ^(NSDictionary *p) {
+        GMChatViewController *s = ws;
+        if (!s) return;
+        [s.navigationController popToViewController:s animated:YES];
+        if (![GMVal(p, @"kind") ?: @"user" isEqual:@"user"]) return;
+        if (![GMVal(p, @"phone") length]) {
+            [GMTheme toast:@"Người này ẩn số điện thoại — không gửi danh thiếp được." in:s.view];
+            return;
+        }
+        NSString *name = GMVal(p, @"name") ?: @"";
+        [s sendContactPhone:GMVal(p, @"phone") first:name last:nil];
+    };
+    [self.navigationController pushViewController:c animated:YES];
+}
+
+- (void)sendContactPhone:(NSString *)phone first:(NSString *)first last:(NSString *)last {
+    NSMutableDictionary *args = [@{@"peer": self.peer, @"phone": phone ?: @"", @"first": first ?: @"", @"last": last ?: @""} mutableCopy];
+    if (self.topic) [args setObject:self.topic forKey:@"topic"];
+    [GMCore call:@"messages.sendContact" args:args done:^(id ok, NSDictionary *err) {
+        if (err) {
+            [GMTheme toast:GMErrorText(err) in:self.view];
+            return;
+        }
+        GMLog(@"đã gửi danh thiếp %@", GMVal(ok, @"id"));
+        [self append:ok];
+    }];
+}
+
+/// Danh thiếp của chính mình (phím «gửi số điện thoại» của bot).
+- (void)sendMyContact {
+    [GMCore call:@"account.get" args:nil done:^(id ok, NSDictionary *err) {
+        if (![GMVal(ok, @"phone") length]) {
+            [GMTheme toast:err ? GMErrorText(err) : @"Không đọc được số của bạn." in:self.view];
+            return;
+        }
+        [self sendContactPhone:GMVal(ok, @"phone") first:GMVal(ok, @"first") last:GMVal(ok, @"last")];
+    }];
+}
+
+- (void)debugSendContact:(NSString *)arg {
+    NSRange sp = [arg rangeOfString:@" "];
+    if (sp.location == NSNotFound) return;
+    [self sendContactPhone:[arg substringToIndex:sp.location] first:[arg substringFromIndex:sp.location + 1] last:nil];
+}
+
+#pragma mark Mã QR chuyển khoản
+
+- (void)openVietQR {
+    GMVietQRViewController *q = [[GMVietQRViewController alloc] init];
+    __weak GMChatViewController *ws = self;
+    q.send = ^(UIImage *card, NSString *caption) { [ws sendImage:card caption:caption]; };
+    [self.navigationController pushViewController:q animated:YES];
+}
+
+- (void)debugOpenVietQR {
+    [self openVietQR];
+}
+
+#pragma mark Vị trí
+
+/// Đính kèm → «Vị trí»: màn bản đồ chọn chỗ (định vị máy / kéo bản đồ) → gửi tin vị trí.
+- (void)pickLocation {
+    __weak GMChatViewController *ws = self;
+    GMMapViewController *m = [[GMMapViewController alloc] initPickerWithDone:^(double lat, double lng) { [ws sendGeoLat:lat lng:lng]; }];
+    [self.navigationController pushViewController:m animated:YES];
+}
+
+- (void)sendGeoLat:(double)lat lng:(double)lng {
+    NSNumber *reply = _compose == GMComposeReply ? GMVal(_target, @"id") : nil;
+    if (reply) [self setCompose:GMComposeNormal target:nil];
+    NSMutableDictionary *args = [@{@"peer": self.peer, @"lat": @(lat), @"lng": @(lng)} mutableCopy];
+    if (reply) [args setObject:reply forKey:@"reply_to"];
+    if (self.topic) [args setObject:self.topic forKey:@"topic"];
+    [GMCore call:@"messages.sendGeo" args:args done:^(id ok, NSDictionary *err) {
+        if (err) {
+            [GMTheme toast:GMErrorText(err) in:self.view];
+            return;
+        }
+        GMLog(@"đã gửi vị trí %@", GMVal(ok, @"id"));
+        [self append:ok];
+    }];
+}
+
+- (void)debugSendGeo:(NSString *)arg {
+    NSArray *p = [arg componentsSeparatedByString:@" "];
+    if (p.count == 2) [self sendGeoLat:[[p objectAtIndex:0] doubleValue] lng:[[p objectAtIndex:1] doubleValue]];
+}
+
+#pragma mark Tin ghim
+
+/// Tải các tin đang ghim (màn chủ đề: chỉ tin của chủ đề này) rồi hiện thanh trên đầu.
+- (void)loadPins {
+    [GMCore call:@"messages.pinned" args:@{@"peer": self.peer} done:^(id ok, NSDictionary *err) {
+        if (![ok isKindOfClass:[NSArray class]]) return;
+        NSMutableArray *pins = [NSMutableArray array];
+        for (NSDictionary *m in ok) {
+            if ([self inTopic:m]) [pins addObject:m];
+        }
+        NSNumber *cur = _pinIdx < (NSInteger)_pins.count ? GMVal([_pins objectAtIndex:_pinIdx], @"id") : nil;
+        _pins = pins;
+        _pinIdx = 0;
+        for (NSUInteger i = 0; cur && i < pins.count; i++) {
+            if ([GMVal([pins objectAtIndex:i], @"id") isEqual:cur]) _pinIdx = (NSInteger)i;
+        }
+        GMLog(@"tin ghim: %lu", (unsigned long)pins.count);
+        [self updatePinBar];
+    }];
+}
+
+- (void)updatePinBar {
+    BOOL show = _pins.count > 0 && !_pinHidden;
+    if (show && !_pinBar) {
+        _pinBar = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, kPinH)];
+        _pinBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        UIImageView *bg = [[UIImageView alloc] initWithFrame:_pinBar.bounds];
+        bg.image = [GMTheme glassBar];
+        bg.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [_pinBar addSubview:bg];
+        UIView *line = [[UIView alloc] initWithFrame:CGRectMake(10, 7, 2, kPinH - 14)];
+        line.backgroundColor = [GMTheme accent];
+        [_pinBar addSubview:line];
+        _pinTitle = [[UILabel alloc] initWithFrame:CGRectMake(20, 5, _pinBar.bounds.size.width - 64, 17)];
+        _pinTitle.font = [UIFont boldSystemFontOfSize:14];
+        _pinTitle.textColor = [GMTheme accent];
+        _pinTitle.backgroundColor = [UIColor clearColor];
+        _pinTitle.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [_pinBar addSubview:_pinTitle];
+        _pinText = [[UILabel alloc] initWithFrame:CGRectMake(20, 22, _pinBar.bounds.size.width - 64, 17)];
+        _pinText.font = [UIFont systemFontOfSize:14];
+        _pinText.textColor = [GMTheme text];
+        _pinText.backgroundColor = [UIColor clearColor];
+        _pinText.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [_pinBar addSubview:_pinText];
+        UIButton *tap = [UIButton buttonWithType:UIButtonTypeCustom];
+        tap.frame = CGRectMake(0, 0, _pinBar.bounds.size.width - 44, kPinH);
+        tap.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [tap addTarget:self action:@selector(pinTapped) forControlEvents:UIControlEventTouchUpInside];
+        [_pinBar addSubview:tap];
+        UIButton *x = [UIButton buttonWithType:UIButtonTypeCustom];
+        x.frame = CGRectMake(_pinBar.bounds.size.width - 44, 0, 44, kPinH);
+        x.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
+        [x setTitle:@"✕" forState:UIControlStateNormal];
+        [x setTitleColor:[GMTheme secondaryText] forState:UIControlStateNormal];
+        x.titleLabel.font = [UIFont systemFontOfSize:18];
+        [x addTarget:self action:@selector(pinClosed) forControlEvents:UIControlEventTouchUpInside];
+        [_pinBar addSubview:x];
+        [self.view insertSubview:_pinBar aboveSubview:_table];
+    }
+    BOOL wasShown = _pinBar && !_pinBar.hidden;
+    _pinBar.hidden = !show;
+    if (show) {
+        NSDictionary *m = [_pins objectAtIndex:MIN(_pinIdx, (NSInteger)_pins.count - 1)];
+        _pinTitle.text = _pins.count > 1 ? [NSString stringWithFormat:@"Tin đã ghim %ld/%lu", (long)_pinIdx + 1, (unsigned long)_pins.count]
+                                         : @"Tin đã ghim";
+        _pinText.text = [[GMTheme preview:m] stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
+    }
+    if (wasShown != show) [self layoutBars:YES];
+}
+
+/// Chạm thanh ghim: nhảy tới tin đang hiện, rồi chuyển thanh sang tin ghim cũ hơn (hết thì quay về tin mới nhất).
+- (void)pinTapped {
+    if (!_pins.count) return;
+    NSDictionary *m = [_pins objectAtIndex:MIN(_pinIdx, (NSInteger)_pins.count - 1)];
+    self.jumpTo = GMVal(m, @"id");
+    [self tryJump];
+    _pinIdx = (_pinIdx + 1) % (NSInteger)_pins.count;
+    [self updatePinBar];
+}
+
+- (void)pinClosed {
+    _pinHidden = YES;
+    [self updatePinBar];
+}
+
+/// Đánh dấu ghim / bỏ ghim trên các tin đã tải (menu «Ghim / Bỏ ghim» đúng chữ).
+- (void)markPinned:(NSArray *)ids on:(BOOL)on {
+    for (NSUInteger i = 0; i < _msgs.count; i++) {
+        NSDictionary *m = [_msgs objectAtIndex:i];
+        if (![ids containsObject:GMVal(m, @"id")]) continue;
+        NSMutableDictionary *x = [m mutableCopy];
+        [x setObject:@(on) forKey:@"pinned"];
+        [_msgs replaceObjectAtIndex:i withObject:x];
+    }
+    [self rebuildRows];
+}
+
+- (void)gmPin:(id)sender {
+    [self pinMessage:_menuMsg];
+}
+
+- (void)pinMessage:(NSDictionary *)m {
+    BOOL unpin = [GMVal(m, @"pinned") boolValue];
+    NSNumber *mid = GMVal(m, @"id");
+    [GMCore call:@"messages.pin" args:@{@"peer": self.peer, @"id": mid, @"unpin": @(unpin)} done:^(id ok, NSDictionary *err) {
+        if (err) {
+            [GMTheme toast:GMErrorText(err) in:self.view];
+            return;
+        }
+        GMLog(@"%@ tin %@", unpin ? @"đã bỏ ghim" : @"đã ghim", mid);
+        [GMTheme toast:unpin ? @"Đã bỏ ghim" : @"Đã ghim" in:self.view];
+        [self markPinned:@[mid] on:!unpin];
+        _pinHidden = NO;
+        [self loadPins];
+    }];
+}
+
+- (void)debugPinFromBottom:(NSInteger)k {
+    NSInteger r = [self rowFromBottom:k];
+    if (r != NSNotFound) [self pinMessage:[[_rows objectAtIndex:r] objectForKey:@"msg"]];
+}
+
+- (void)debugPinTap {
+    [self pinTapped];
+}
+
+#pragma mark Bình chọn
+
+- (CGFloat)pollW {
+    return MIN([self maxBubbleW] - 2 * kPadX - [GMTheme tailWidth], 260);
+}
+
+- (NSString *)pollSig:(NSDictionary *)m {
+    NSDictionary *p = GMVal(m, @"poll");
+    if (!p) return @"";
+    NSMutableString *s = [NSMutableString stringWithFormat:@"%@%@", GMVal(GMVal(p, @"results"), @"total"), GMVal(p, @"closed")];
+    for (NSDictionary *v in GMVal(GMVal(p, @"results"), @"voters")) {
+        if ([GMVal(v, @"chosen") boolValue]) [s appendString:GMVal(v, @"o") ?: @""];
+    }
+    return s;
+}
+
+/// Bỏ phiếu (mảng mã lựa chọn; rỗng = rút phiếu) rồi cập nhật kết quả từ phản hồi.
+- (void)vote:(NSArray *)options msg:(NSNumber *)msgId {
+    [_pollSel removeObjectForKey:msgId];
+    NSString *pid = GMVal(GMVal([self msgWithId:msgId], @"poll"), @"id");
+    [GMCore call:@"messages.vote" args:@{@"peer": self.peer, @"id": msgId, @"options": options ?: @[]} done:^(id ok, NSDictionary *err) {
+        if (err) {
+            [GMTheme toast:GMErrorText(err) in:self.view];
+            [self reloadTable];
+            return;
+        }
+        GMLog(@"bình chọn: %@", options.count ? @"đã bỏ phiếu" : @"đã rút phiếu");
+        NSMutableDictionary *u = [ok isKindOfClass:[NSDictionary class]] ? [ok mutableCopy] : [NSMutableDictionary dictionary];
+        if (!GMVal(u, @"poll_id") && pid) [u setObject:pid forKey:@"poll_id"];
+        if (GMVal(u, @"results")) [self applyPollUpdate:u];
+    }];
+}
+
+- (void)togglePollOption:(NSString *)o msg:(NSNumber *)msgId {
+    if (!_pollSel) _pollSel = [NSMutableDictionary dictionary];
+    NSMutableSet *s = [_pollSel objectForKey:msgId] ?: [NSMutableSet set];
+    if ([s containsObject:o]) [s removeObject:o];
+    else [s addObject:o];
+    [_pollSel setObject:s forKey:msgId];
+    [_table reloadData];
+}
+
+/// Cập nhật bình chọn (sự kiện msg.poll hoặc phản hồi bỏ phiếu): tìm tin theo mã bình chọn, thay kết quả. Kết quả «min» (người
+/// khác vừa bỏ phiếu) không kèm lựa chọn của mình → giữ dấu ✓ cũ.
+- (void)applyPollUpdate:(NSDictionary *)u {
+    NSString *pid = [GMVal(u, @"poll_id") description];
+    for (NSUInteger i = 0; i < _msgs.count; i++) {
+        NSDictionary *m = [_msgs objectAtIndex:i];
+        NSDictionary *p = GMVal(m, @"poll");
+        if (!p || ![[GMVal(p, @"id") description] isEqual:pid]) continue;
+        NSMutableDictionary *np = [(GMVal(u, @"poll") ?: p) mutableCopy];
+        NSDictionary *res = GMVal(u, @"results");
+        if (res) {
+            NSMutableDictionary *nr = [res mutableCopy];
+            if ([GMVal(res, @"min") boolValue]) {
+                NSMutableSet *mine = [NSMutableSet set];
+                for (NSDictionary *v in GMVal(GMVal(p, @"results"), @"voters")) {
+                    if ([GMVal(v, @"chosen") boolValue] && GMVal(v, @"o")) [mine addObject:GMVal(v, @"o")];
+                }
+                NSMutableArray *vs = [NSMutableArray array];
+                for (NSDictionary *v in GMVal(res, @"voters")) {
+                    NSMutableDictionary *x = [v mutableCopy];
+                    if ([mine containsObject:GMVal(v, @"o")]) [x setObject:@YES forKey:@"chosen"];
+                    [vs addObject:x];
+                }
+                [nr setObject:vs forKey:@"voters"];
+            }
+            [np setObject:nr forKey:@"results"];
+        }
+        NSMutableDictionary *nm = [m mutableCopy];
+        [nm setObject:np forKey:@"poll"];
+        [_msgs replaceObjectAtIndex:i withObject:nm];
+        BOOL bottom = [self nearBottom];
+        [self reloadTable];
+        if (bottom) [self scrollToBottom:NO];
+        return;
+    }
+}
+
+/// Công cụ thử: gửi bình chọn «câu hỏi|lựa chọn 1|lựa chọn 2…» (thêm «|*» ở cuối = nhiều lựa chọn).
+- (void)debugSendPoll:(NSString *)spec {
+    NSMutableArray *parts = [[spec componentsSeparatedByString:@"|"] mutableCopy];
+    BOOL multi = [parts.lastObject isEqual:@"*"];
+    if (multi) [parts removeLastObject];
+    if (parts.count < 3) return;
+    NSString *q = [parts objectAtIndex:0];
+    [parts removeObjectAtIndex:0];
+    [GMCore call:@"messages.sendPoll" args:@{@"peer": self.peer, @"q": q, @"answers": parts, @"multi": @(multi)}
+            done:^(id ok, NSDictionary *err) {
+                if (err) {
+                    GMLog(@"[thử] gửi bình chọn lỗi: %@", GMVal(err, @"code"));
+                    return;
+                }
+                GMLog(@"[thử] đã gửi bình chọn %@", GMVal(ok, @"id"));
+                [self append:ok];
+            }];
+}
+
+/// Công cụ thử: bỏ phiếu ở tin thứ k từ dưới lên — `idx`: số thứ tự lựa chọn cách nhau bởi dấu phẩy («0», «0,2»); «-» = rút phiếu.
+- (void)debugVoteFromBottom:(NSInteger)k options:(NSString *)idx {
+    NSInteger r = [self rowFromBottom:k];
+    if (r == NSNotFound) return;
+    NSDictionary *m = [[_rows objectAtIndex:r] objectForKey:@"msg"];
+    NSArray *answers = GMVal(GMVal(m, @"poll"), @"answers");
+    if (!answers) {
+        GMLog(@"[thử] tin này không phải bình chọn");
+        return;
+    }
+    NSMutableArray *opts = [NSMutableArray array];
+    if (![idx isEqual:@"-"]) {
+        for (NSString *x in [idx componentsSeparatedByString:@","]) {
+            NSInteger j = x.integerValue;
+            if (j >= 0 && j < (NSInteger)answers.count) [opts addObject:GMVal([answers objectAtIndex:j], @"o")];
+        }
+    }
+    [self vote:opts msg:GMVal(m, @"id")];
+}
+
+- (void)joinTapped {
+    _joinBtn.enabled = NO;
+    NSDictionary *args = self.joinHash ? @{@"hash": self.joinHash} : @{@"peer": self.peer};
+    [GMCore call:@"chats.join" args:args done:^(id ok, NSDictionary *err) {
+        _joinBtn.enabled = YES;
+        if (err) {
+            GMAlertShow(@"Chưa vào được", GMErrorText(err), @"OK", nil, nil);
+            return;
+        }
+        self.joinHash = nil;
+        [self setJoinBar:NO];
+        [GMTheme toast:[self.kind isEqual:@"channel"] ? @"Đã tham gia kênh" : @"Đã tham gia nhóm" in:self.view];
+        [((GMAppDelegate *)[UIApplication sharedApplication].delegate).list reload];
+        [self loadStatus];
+    }];
 }
 
 #pragma mark Trạng thái (dòng phụ dưới tên chat)
@@ -629,6 +1634,12 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     [GMCore call:@"chat.status" args:@{@"peer": self.peer} done:^(id ok, NSDictionary *err) {
         if (!ok) return;
         _status = ok;
+        _allowedReacts = GMVal(ok, @"reactions");
+        _commands = GMVal(GMVal(ok, @"bot_info"), @"commands") ?: GMVal(ok, @"commands");
+        [self checkBotStart];
+        // Chưa vào (mở từ link, kết quả tìm): thanh «Tham gia» — nhóm thường đã rời thì không vào lại được (cần link mời)
+        BOOL left = [GMVal(ok, @"left") boolValue] && ([self.peer hasPrefix:@"-100"] || self.joinHash);
+        if (left != self.left) [self setJoinBar:left];
         if (!_typingTimer) [self showStatus];
     }];
 }
@@ -775,12 +1786,18 @@ static BOOL gDebugNoRead;
         } else if (page.count < 40) {
             _noMore = YES;
         }
-        if (!page.count) return;
+        BOOL wasLoaded = _historyLoaded;
+        _historyLoaded = YES;
+        if (!page.count) {
+            if (!wasLoaded) [self checkBotStart];  // chat trống: bot → «Bắt đầu»
+            return;
+        }
         BOOL first = _msgs.count == 0;
         CGFloat before = _table.contentSize.height;
         CGFloat offset = _table.contentOffset.y;
         for (NSDictionary *m in page) [_msgs insertObject:m atIndex:0];
         [self reloadTable];
+        [self updateBotKeyboard];
         if (self.jumpTo) {
             [self tryJump];
             return;
@@ -857,6 +1874,8 @@ static BOOL gDebugNoRead;
     [_msgs addObject:m];
     [self reloadTable];
     if (bottom) [self scrollToBottom:YES];
+    _botCard.hidden = YES;
+    [self updateBotKeyboard];
 }
 
 - (void)event:(NSNotification *)n {
@@ -893,6 +1912,7 @@ static BOOL gDebugNoRead;
     }
     if ([e isEqual:@"msg.new"] && [GMVal(m, @"peer") isEqual:self.peer] && [self inTopic:m]) {
         [self append:m];
+        if ([GMVal(m, @"scheduled") boolValue]) [self loadScheduled];  // tin hẹn giờ vừa tới giờ
         // Ở nền (đang mở chat này rồi bấm Home): chưa tính là đã đọc — quay lại app mới đánh dấu
         if (![GMVal(m, @"out") boolValue] && [UIApplication sharedApplication].applicationState == UIApplicationStateActive) {
             [self markRead];
@@ -902,6 +1922,7 @@ static BOOL gDebugNoRead;
         if (i != NSNotFound) {
             [_msgs replaceObjectAtIndex:i withObject:m];
             [self reloadTable];
+            [self updateBotKeyboard];
         }
     } else if ([e isEqual:@"msg.delete"]) {
         NSString *channel = GMVal(ev, @"channel");
@@ -911,6 +1932,13 @@ static BOOL gDebugNoRead;
         [self removeIds:GMVal(ev, @"ids")];
     } else if ([e isEqual:@"net.state"]) {
         _titleView.connecting = ![GMVal(ev, @"ok") boolValue];
+    } else if ([e isEqual:@"msg.poll"]) {
+        [self applyPollUpdate:ev];
+    } else if ([e isEqual:@"msg.pinned"] && [GMVal(ev, @"peer") isEqual:self.peer]) {
+        [self markPinned:GMVal(ev, @"ids") on:[GMVal(ev, @"pinned") boolValue]];
+        [self loadPins];
+    } else if ([e isEqual:@"msg.reactions"] && [GMVal(ev, @"peer") isEqual:self.peer]) {
+        [self setReactions:GMVal(ev, @"reactions") forMsg:GMVal(ev, @"id")];
     } else if ([e isEqual:@"msg.readOutbox"] && [GMVal(ev, @"peer") isEqual:self.peer]) {
         self.readOut = MAX(self.readOut, [GMVal(ev, @"max_id") integerValue]);
         [_table reloadData];
@@ -929,6 +1957,80 @@ static BOOL gDebugNoRead;
 
 #pragma mark Soạn / gửi
 
+#pragma mark Gợi ý «/»: lệnh bot, tin nhắn nhanh
+
+/// Ô nhập bắt đầu bằng «/» (chưa có khoảng trắng): gợi ý lệnh của bot và tin nhắn nhanh khớp; không khớp gì → «+ Thêm tin nhắn
+/// nhanh».
+- (void)updateSuggestions {
+    NSString *t = _input.text;
+    NSMutableArray *items = [NSMutableArray array];
+    BOOL slash = [t hasPrefix:@"/"] && _compose != GMComposeEdit &&
+                 [t rangeOfCharacterFromSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]].location == NSNotFound;
+    if (slash) {
+        NSString *q = [[t substringFromIndex:1] lowercaseString];
+        for (NSDictionary *c in _commands) {
+            NSString *cmd = GMVal(c, @"c");
+            if (cmd.length < 2 || (q.length && ![[[cmd substringFromIndex:1] lowercaseString] hasPrefix:q])) continue;
+            [items addObject:@{@"t": cmd, @"d": GMVal(c, @"d") ?: @"", @"kind": @"cmd", @"v": cmd}];
+        }
+        for (NSDictionary *r in [GMQuickReplies all]) {
+            NSString *k = [r objectForKey:@"k"];
+            if (q.length && ![k hasPrefix:q]) continue;
+            [items addObject:@{@"t": [@"/" stringByAppendingString:k], @"d": [r objectForKey:@"t"], @"kind": @"quick",
+                               @"v": [r objectForKey:@"t"]}];
+        }
+        if (!items.count) {
+            [items addObject:@{@"t": @"+ Thêm tin nhắn nhanh", @"kind": @"add", @"v": q,
+                               @"d": q.length ? [NSString stringWithFormat:@"Lưu mẫu câu với từ khoá /%@", q]
+                                              : @"Mẫu câu tự đặt — gõ «/từ khoá» để chèn"}];
+        }
+    }
+    if (!items.count) {
+        if (!_suggest.hidden) {
+            _suggest.hidden = YES;
+        }
+        return;
+    }
+    if (!_suggest) {
+        _suggest = [[GMSuggestView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 44)];
+        __weak GMChatViewController *ws = self;
+        _suggest.pick = ^(NSDictionary *it) { [ws suggestPicked:it]; };
+        [self.view addSubview:_suggest];
+    }
+    _suggest.items = items;
+    _suggest.hidden = NO;
+    [self.view bringSubviewToFront:_suggest];
+    [self layoutBars:NO];
+}
+
+- (void)suggestPicked:(NSDictionary *)it {
+    NSString *kind = GMVal(it, @"kind"), *v = GMVal(it, @"v") ?: @"";
+    if ([kind isEqual:@"cmd"]) {
+        _input.text = @"";
+        [self textViewDidChange:_input];
+        [self sendText:v reply:nil];
+    } else if ([kind isEqual:@"quick"]) {
+        _input.text = v;
+        [self textViewDidChange:_input];
+    } else {
+        _input.text = @"";
+        [self textViewDidChange:_input];
+        [_input resignFirstResponder];
+        GMQuickRepliesViewController *q = [[GMQuickRepliesViewController alloc] init];
+        q.prefillKeyword = v.length ? v : nil;
+        [self.navigationController pushViewController:q animated:YES];
+    }
+}
+
+- (void)debugSuggest:(NSInteger)i {
+    if (_suggest.hidden || i < 0 || i >= (NSInteger)_suggest.items.count) {
+        GMLog(@"[thử] gợi ý: không có mục %ld (%lu mục)", (long)i, (unsigned long)(_suggest.hidden ? 0 : _suggest.items.count));
+        return;
+    }
+    GMLog(@"[thử] gợi ý: %lu mục, chọn «%@»", (unsigned long)_suggest.items.count, GMVal([_suggest.items objectAtIndex:i], @"t"));
+    [self suggestPicked:[_suggest.items objectAtIndex:i]];
+}
+
 - (void)textViewDidChange:(UITextView *)tv {
     if (tv.text.length && _compose != GMComposeEdit) [self sendTyping:@"typing"];
     _placeholder.hidden = tv.text.length > 0;
@@ -941,6 +2043,7 @@ static BOOL gDebugNoRead;
         _barH = barH;
         [UIView animateWithDuration:0.15 animations:^{ [self layoutBars:YES]; }];
     }
+    [self updateSuggestions];
 }
 
 - (void)setCompose:(GMCompose)mode target:(NSDictionary *)m {
@@ -1098,6 +2201,10 @@ static BOOL gDebugNoRead;
 /// Gửi tin chữ: bong bóng «🕓 đang gửi» hiện ngay (mã tạm âm); gửi được → thay bằng tin thật; mất mạng → lõi giữ trong hàng
 /// chờ, có mạng tự gửi (sự kiện outbox.sent); máy chủ từ chối → ⚠️, chạm để gửi lại / xoá.
 - (void)sendText:(NSString *)text reply:(NSNumber *)reply {
+    [self sendText:text reply:reply silent:NO];
+}
+
+- (void)sendText:(NSString *)text reply:(NSNumber *)reply silent:(BOOL)silent {
     long long t0 = GMNowMs();
     NSNumber *tmp = @(-(t0 % 1000000000) - 1);
     NSMutableDictionary *pending = [@{@"id": tmp, @"peer": self.peer, @"text": text, @"out": @YES, @"pending": @YES,
@@ -1107,6 +2214,7 @@ static BOOL gDebugNoRead;
     [self append:pending];
     NSMutableDictionary *args = [@{@"peer": self.peer, @"text": text, @"queue": @YES} mutableCopy];
     if (reply) [args setObject:reply forKey:@"reply_to"];
+    if (silent) [args setObject:@YES forKey:@"silent"];
     if (self.topic) [args setObject:self.topic forKey:@"topic"];
     [GMCore call:@"messages.send" args:args done:^(id ok, NSDictionary *err) {
         if (err) {
@@ -1403,6 +2511,12 @@ static const unsigned char kGMBOM[3] = {0xEF, 0xBB, 0xBF};
     [kinds addObject:@(UIImagePickerControllerSourceTypePhotoLibrary)];
     [s addButtonWithTitle:@"Tệp trên máy"];
     [kinds addObject:@(-1)];
+    [s addButtonWithTitle:@"Vị trí"];
+    [kinds addObject:@(-2)];
+    [s addButtonWithTitle:@"Mã QR chuyển khoản"];
+    [kinds addObject:@(-3)];
+    [s addButtonWithTitle:@"Danh thiếp"];
+    [kinds addObject:@(-4)];
     s.cancelButtonIndex = [s addButtonWithTitle:@"Huỷ"];
     objc_setAssociatedObject(s, "attach", kinds, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [s showInView:self.view];
@@ -1448,6 +2562,10 @@ static const unsigned char kGMBOM[3] = {0xEF, 0xBB, 0xBF};
 
 /// Thu ảnh về cạnh dài ≤ 1280, JPEG 0,8, rồi gửi (ở hàng nền — ảnh 8 MP trên A4 mất cỡ giây).
 - (void)sendImage:(UIImage *)img {
+    [self sendImage:img caption:nil];
+}
+
+- (void)sendImage:(UIImage *)img caption:(NSString *)caption {
     [GMTheme toast:@"Đang gửi ảnh…" in:self.view];
     NSString *path = [[GMDataDir() stringByAppendingPathComponent:@"tmp"] stringByAppendingPathComponent:@"photo.jpg"];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
@@ -1461,14 +2579,19 @@ static const unsigned char kGMBOM[3] = {0xEF, 0xBB, 0xBF};
         [[NSFileManager defaultManager] createDirectoryAtPath:[path stringByDeletingLastPathComponent]
                                   withIntermediateDirectories:YES attributes:nil error:NULL];
         [UIImageJPEGRepresentation(small, 0.8) writeToFile:path atomically:YES];
-        dispatch_async(dispatch_get_main_queue(), ^{ [self sendPhotoFile:path]; });
+        dispatch_async(dispatch_get_main_queue(), ^{ [self sendPhotoFile:path caption:caption]; });
     });
 }
 
 - (void)sendPhotoFile:(NSString *)path {
+    [self sendPhotoFile:path caption:nil];
+}
+
+- (void)sendPhotoFile:(NSString *)path caption:(NSString *)caption {
     NSNumber *reply = _compose == GMComposeReply ? GMVal(_target, @"id") : nil;
     if (reply) [self setCompose:GMComposeNormal target:nil];
     NSMutableDictionary *args = [@{@"peer": self.peer, @"path": path} mutableCopy];
+    if (caption.length) [args setObject:caption forKey:@"caption"];
     if (reply) [args setObject:reply forKey:@"reply_to"];
     if (self.topic) [args setObject:self.topic forKey:@"topic"];
     long long t0 = GMNowMs();
@@ -1669,6 +2792,8 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     if (!_menuMsg) return NO;
     if ([GMVal(_menuMsg, @"id") integerValue] < 0) return action == @selector(gmCopy:);  // chưa gửi xong
     if (action == @selector(gmReply:)) return !_bar.hidden;
+    if (action == @selector(gmReact:)) return [self canReact:_menuMsg];
+    if (action == @selector(gmPin:)) return ![GMVal(_menuMsg, @"service") boolValue] && !self.left;
     if (action == @selector(gmCopy:)) return [GMVal(_menuMsg, @"text") length] > 0;
     if (action == @selector(gmForward:)) return ![GMVal(_menuMsg, @"service") boolValue];
     if (action == @selector(gmSave:)) return [self canSave:_menuMsg];
@@ -1685,10 +2810,12 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     [self becomeFirstResponder];
     UIMenuController *mc = [UIMenuController sharedMenuController];
     mc.menuItems = @[
+        [[UIMenuItem alloc] initWithTitle:@"Cảm xúc" action:@selector(gmReact:)],
         [[UIMenuItem alloc] initWithTitle:@"Trả lời" action:@selector(gmReply:)],
         [[UIMenuItem alloc] initWithTitle:@"Sao chép" action:@selector(gmCopy:)],
         [[UIMenuItem alloc] initWithTitle:@"Chuyển tiếp" action:@selector(gmForward:)],
         [[UIMenuItem alloc] initWithTitle:@"Lưu vào máy" action:@selector(gmSave:)],
+        [[UIMenuItem alloc] initWithTitle:[GMVal(_menuMsg, @"pinned") boolValue] ? @"Bỏ ghim" : @"Ghim" action:@selector(gmPin:)],
         [[UIMenuItem alloc] initWithTitle:@"Sửa" action:@selector(gmEdit:)],
         [[UIMenuItem alloc] initWithTitle:@"Xoá" action:@selector(gmDelete:)],
     ];
@@ -1710,6 +2837,175 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
 
 - (void)gmReply:(id)sender {
     [self setCompose:GMComposeReply target:_menuMsg];
+}
+
+#pragma mark Cảm xúc
+
+/// Thả cảm xúc được: tin đã gửi xong, không phải tin hệ thống; Tin nhắn đã lưu thì không (ở đó cảm xúc = thẻ, chỉ Premium);
+/// chat tắt cảm xúc thì không.
+- (BOOL)canReact:(NSDictionary *)m {
+    if (!m || [GMVal(m, @"id") integerValue] <= 0 || [GMVal(m, @"service") boolValue] || [self isSaved]) return NO;
+    return ![_allowedReacts isEqual:@"none"] && (![_allowedReacts isKindOfClass:[NSArray class]] || [_allowedReacts count]);
+}
+
+/// Emoji cho bảng chọn: chat chỉ cho một số → theo danh sách đó; không thì danh sách của Telegram — chỉ giữ emoji máy vẽ được.
+- (NSArray *)pickerEmojis {
+    NSArray *base = [_allowedReacts isKindOfClass:[NSArray class]] ? _allowedReacts : gReactChoices;
+    if (!base.count) base = @[@"👍", @"👎", @"❤", @"🔥", @"😍", @"👏", @"😁", @"😱", @"😢", @"🎉", @"💩", @"🙏", @"👌", @"💯",
+                              @"😭", @"😘", @"😎", @"😈", @"🏆", @"💔"];
+    NSMutableArray *out = [NSMutableArray array];
+    for (NSString *e in base) {
+        if ([GMTheme emojiRenders:e] && ![out containsObject:e]) [out addObject:e];
+    }
+    return out;
+}
+
+- (NSString *)myReaction:(NSDictionary *)m {
+    for (NSDictionary *r in GMVal(m, @"reactions")) {
+        if ([GMVal(r, @"me") boolValue]) return GMVal(r, @"e");
+    }
+    return nil;
+}
+
+- (void)gmReact:(id)sender {
+    [self showReactPickerFor:_menuMsg];
+}
+
+- (GMReactionPicker *)showReactPickerFor:(NSDictionary *)m {
+    if (![self canReact:m]) return nil;
+    CGRect anchor = CGRectMake(self.view.bounds.size.width / 2, 120, 1, 1);
+    for (NSInteger r = 0; r < (NSInteger)_rows.count; r++) {
+        if ([[_rows objectAtIndex:r] objectForKey:@"msg"] == m) {
+            GMBubbleCell *c = (GMBubbleCell *)[_table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:r inSection:0]];
+            UIView *v = (c && !c.bubble.hidden) ? c.bubble : (c ? c.sticker : nil);
+            if (v) anchor = [v convertRect:v.bounds toView:self.view];
+            break;
+        }
+    }
+    NSNumber *mid = GMVal(m, @"id");
+    __weak GMChatViewController *ws = self;
+    return [GMReactionPicker showIn:self.view near:anchor emojis:[self pickerEmojis] chosen:[self myReaction:m]
+                               pick:^(NSString *emoji) { [ws react:mid emoji:emoji]; }];
+}
+
+/// Thả `emoji` (thay cảm xúc cũ của mình), nil → gỡ. Hiện ngay trên máy, rồi lấy danh sách thật từ phản hồi.
+- (void)react:(NSNumber *)msgId emoji:(NSString *)emoji {
+    NSDictionary *m = [self msgWithId:msgId];
+    if (!m) return;
+    NSArray *before = GMVal(m, @"reactions");
+    [self setReactions:[self reactions:before withMine:emoji] forMsg:msgId];
+    NSMutableDictionary *args = [@{@"peer": self.peer, @"id": msgId} mutableCopy];
+    if (emoji) [args setObject:emoji forKey:@"emoji"];
+    [GMCore call:@"messages.react" args:args done:^(id ok, NSDictionary *err) {
+        if (err) {
+            [self setReactions:before forMsg:msgId];
+            [GMTheme toast:GMErrorText(err) in:self.view];
+            return;
+        }
+        GMLog(@"cảm xúc: %@", emoji ? @"đã thả" : @"đã gỡ");
+        if ([GMVal(ok, @"reactions") isKindOfClass:[NSArray class]]) [self setReactions:GMVal(ok, @"reactions") forMsg:msgId];
+    }];
+}
+
+/// Danh sách cảm xúc sau khi mình đổi: bỏ cảm xúc cũ của mình (bớt 1), thêm `emoji` (cộng 1 hoặc viên mới ở cuối).
+- (NSArray *)reactions:(NSArray *)list withMine:(NSString *)emoji {
+    NSMutableArray *out = [NSMutableArray array];
+    BOOL added = NO;
+    for (NSDictionary *r in ([list isKindOfClass:[NSArray class]] ? list : @[])) {
+        NSMutableDictionary *x = [r mutableCopy];
+        NSInteger n = [GMVal(r, @"n") integerValue];
+        if ([GMVal(r, @"me") boolValue]) {
+            n--;
+            [x setObject:@NO forKey:@"me"];
+        }
+        if (emoji && [GMVal(r, @"e") isEqual:emoji]) {
+            n++;
+            [x setObject:@YES forKey:@"me"];
+            added = YES;
+        }
+        [x setObject:@(n) forKey:@"n"];
+        if (n > 0) [out addObject:x];
+    }
+    if (emoji && !added) [out addObject:@{@"e": emoji, @"n": @1, @"me": @YES}];
+    return out;
+}
+
+- (void)setReactions:(NSArray *)rs forMsg:(NSNumber *)msgId {
+    NSInteger i = [self indexOf:msgId];
+    if (i == NSNotFound) return;
+    NSMutableDictionary *m = [[_msgs objectAtIndex:i] mutableCopy];
+    if ([rs isKindOfClass:[NSArray class]] && rs.count) [m setObject:rs forKey:@"reactions"];
+    else [m removeObjectForKey:@"reactions"];
+    [_msgs replaceObjectAtIndex:i withObject:m];
+    BOOL bottom = [self nearBottom];
+    [self reloadTable];
+    if (bottom) [self scrollToBottom:NO];
+}
+
+/// Khoá ngắn của các cảm xúc (bộ đệm chiều cao hàng).
+- (NSString *)reactSig:(NSDictionary *)m {
+    NSMutableString *s = [NSMutableString string];
+    for (NSDictionary *r in GMVal(m, @"reactions")) [s appendFormat:@"%@%@%@,", GMVal(r, @"e"), GMVal(r, @"n"), GMVal(r, @"me")];
+    return s;
+}
+
+/// Cao thêm cho hàng có cảm xúc (khối viên + lề trên).
+- (CGFloat)reactHeight:(NSDictionary *)m {
+    CGSize s = GMLayoutChips(GMVal(m, @"reactions"), [self maxBubbleW] - 2 * kPadX - [GMTheme tailWidth], nil);
+    return s.height > 0 ? s.height + 6 : 0;
+}
+
+/// Đặt các viên cảm xúc của tin vào ô: gốc `o` trong `parent` (bong bóng, hoặc ô — tin sticker). Chạm viên: thả / gỡ cảm xúc đó.
+- (CGSize)fillChips:(GMBubbleCell *)c msg:(NSDictionary *)m tint:(UIColor *)tint plain:(BOOL)plain at:(CGPoint)o in:(UIView *)parent {
+    for (UIView *v in [c.reacts.subviews copy]) [v removeFromSuperview];
+    NSArray *rs = GMVal(m, @"reactions");
+    NSMutableArray *frames = [NSMutableArray array];
+    CGSize sz = GMLayoutChips(rs, [self maxBubbleW] - 2 * kPadX - [GMTheme tailWidth], frames);
+    c.reacts.hidden = sz.height <= 0;
+    if (c.reacts.hidden) return CGSizeZero;
+    if (c.reacts.superview != parent) [parent addSubview:c.reacts];
+    c.reacts.frame = CGRectMake(o.x, o.y, sz.width, sz.height);
+    NSNumber *mid = GMVal(m, @"id");
+    BOOL can = [self canReact:m];
+    __weak GMChatViewController *ws = self;
+    for (NSUInteger i = 0; i < rs.count; i++) {
+        NSDictionary *r = [rs objectAtIndex:i];
+        BOOL me = [GMVal(r, @"me") boolValue];
+        GMChip *b = [GMChip buttonWithType:UIButtonTypeCustom];
+        b.frame = [[frames objectAtIndex:i] CGRectValue];
+        b.titleLabel.font = [UIFont systemFontOfSize:13];
+        [b setTitle:GMChipTitle(r) forState:UIControlStateNormal];
+        [b setTitleColor:me ? [UIColor whiteColor] : (plain ? [UIColor whiteColor] : tint) forState:UIControlStateNormal];
+        b.backgroundColor = me ? tint : (plain ? [GMTheme pillBackground] : [tint colorWithAlphaComponent:0.15]);
+        b.layer.cornerRadius = kChipH / 2;
+        NSString *e = GMVal(r, @"e");
+        if (can && ![GMVal(r, @"custom") boolValue] && ![GMVal(r, @"paid") boolValue]) {
+            b.tap = ^{ [ws react:mid emoji:me ? nil : e]; };
+            [b addTarget:b action:@selector(fire) forControlEvents:UIControlEventTouchUpInside];
+        }
+        [c.reacts addSubview:b];
+    }
+    return sz;
+}
+
+- (void)debugReactFromBottom:(NSInteger)k emoji:(NSString *)emoji {
+    NSInteger r = [self rowFromBottom:k];
+    if (r == NSNotFound) return;
+    NSDictionary *m = [[_rows objectAtIndex:r] objectForKey:@"msg"];
+    if (![self canReact:m]) {
+        GMLog(@"[thử] tin này không thả cảm xúc được");
+        return;
+    }
+    [self react:GMVal(m, @"id") emoji:emoji.length && ![emoji isEqual:@"-"] ? emoji : nil];
+}
+
+- (void)debugReactPickerFromBottom:(NSInteger)k pick:(NSInteger)i {
+    NSInteger r = [self rowFromBottom:k];
+    if (r == NSNotFound) return;
+    GMReactionPicker *p = [self showReactPickerFor:[[_rows objectAtIndex:r] objectForKey:@"msg"]];
+    GMLog(@"[thử] bảng cảm xúc: %lu emoji vẽ được / %lu", (unsigned long)[self pickerEmojis].count,
+          (unsigned long)(gReactChoices.count ?: 0));
+    if (p && i >= 0) [p tapIndex:i];
 }
 
 - (void)gmCopy:(id)sender {
@@ -1825,18 +3121,19 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
 
 #pragma mark Link, proxy
 
-- (NSArray *)webLinksOf:(NSDictionary *)m {
+/// Link chạm mở được: link web + link Telegram (t.me, @tên, tg://resolve…) — bỏ link proxy (nút riêng), tg:// khác, email.
+- (NSArray *)openableLinksOf:(NSDictionary *)m {
     NSMutableArray *out = [NSMutableArray array];
-    for (NSString *link in GMVal(m, @"links")) {
-        NSString *l = link;
+    for (NSString *l in GMVal(m, @"links")) {
         NSString *low = l.lowercaseString;
-        if ([low hasPrefix:@"tg://"] || [l isEqual:GMVal(m, @"proxy")]) continue;
-        if ([low rangeOfString:@"://"].location == NSNotFound) {
-            if ([l rangeOfString:@"@"].location != NSNotFound) continue;  // địa chỉ email
-            l = [@"http://" stringByAppendingString:l];
+        if ([l isEqual:GMVal(m, @"proxy")]) continue;
+        if ([GMLinks isTelegramLink:l]) {
+            [out addObject:l];
+            continue;
         }
-        NSURL *u = [NSURL URLWithString:l];
-        if (u) [out addObject:u];
+        if ([low hasPrefix:@"tg://"] || [low hasPrefix:@"@"]) continue;
+        if ([low rangeOfString:@"://"].location == NSNotFound && [l rangeOfString:@"@"].location != NSNotFound) continue;  // email
+        [out addObject:l];
     }
     return out;
 }
@@ -1900,6 +3197,17 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         [[GMVoicePlayer shared] toggle:self.peer msg:GMVal(m, @"id")];
         return;
     }
+    if ([GMVal(m, @"contact") isKindOfClass:[NSDictionary class]]) {
+        [self contactTapped:GMVal(m, @"contact")];
+        return;
+    }
+    NSDictionary *geo = GMVal(m, @"geo");
+    if (geo) {
+        GMMapViewController *mv = [[GMMapViewController alloc] initWithLat:[GMVal(geo, @"lat") doubleValue] lng:[GMVal(geo, @"lng") doubleValue]
+                                                                      title:GMVal(geo, @"title")];
+        [self.navigationController pushViewController:mv animated:YES];
+        return;
+    }
     if (GMVal(m, @"photo")) {
         GMPhotoViewController *p = [[GMPhotoViewController alloc] init];
         p.peer = self.peer;
@@ -1915,13 +3223,13 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         [self openProxy:proxy];
         return;
     }
-    NSArray *web = [self webLinksOf:m];
+    NSArray *web = [self openableLinksOf:m];
     if (web.count == 1) {
-        [[UIApplication sharedApplication] openURL:web.firstObject];
+        [GMLinks open:web.firstObject in:self.view];
     } else if (web.count > 1) {
         UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:@"Mở link" delegate:self cancelButtonTitle:nil
                                              destructiveButtonTitle:nil otherButtonTitles:nil];
-        for (NSURL *u in web) [sheet addButtonWithTitle:u.absoluteString];
+        for (NSString *u in web) [sheet addButtonWithTitle:u];
         sheet.cancelButtonIndex = [sheet addButtonWithTitle:@"Huỷ"];
         objc_setAssociatedObject(sheet, "links", web, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [sheet showInView:self.view];
@@ -1929,6 +3237,31 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
 }
 
 - (void)actionSheet:(UIActionSheet *)sheet clickedButtonAtIndex:(NSInteger)i {
+    NSArray *cardActs = objc_getAssociatedObject(sheet, "card");
+    if (cardActs) {
+        NSDictionary *card = objc_getAssociatedObject(sheet, "cardData");
+        if (i < 0 || i >= (NSInteger)cardActs.count) return;
+        NSString *act = [cardActs objectAtIndex:i];
+        NSString *phone = [@"+" stringByAppendingString:[GMVal(card, @"phone") ?: @"" stringByReplacingOccurrencesOfString:@"+" withString:@""]];
+        if ([act isEqual:@"chat"]) {
+            [GMLinks open:[NSString stringWithFormat:@"tg://user?id=%@", GMVal(card, @"user")] in:self.view];
+        } else if ([act isEqual:@"call"]) {
+            [[UIApplication sharedApplication] openURL:[NSURL URLWithString:[@"tel:" stringByAppendingString:phone]]];
+        } else if ([act isEqual:@"copy"]) {
+            [UIPasteboard generalPasteboard].string = phone;
+            [GMTheme toast:@"Đã chép số" in:self.view];
+        }
+        return;
+    }
+    NSArray *sched = objc_getAssociatedObject(sheet, "sched");
+    if (sched) {
+        if (i < 0 || i >= (NSInteger)sched.count) return;
+        double at = [[sched objectAtIndex:i] doubleValue];
+        if (at == -1) [self showDatePicker];
+        else if (at == -2) [self sendComposed:0 silent:YES];
+        else [self sendComposed:at silent:NO];
+        return;
+    }
     NSDictionary *failed = objc_getAssociatedObject(sheet, "failed");
     if (failed) {
         if (i == sheet.cancelButtonIndex) return;
@@ -1944,7 +3277,10 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     if (kinds) {
         if (i >= 0 && i < (NSInteger)kinds.count) {
             NSInteger k = [[kinds objectAtIndex:i] integerValue];
-            if (k < 0) [self openFileBrowser];
+            if (k == -4) [self pickContactCard];
+            else if (k == -3) [self openVietQR];
+            else if (k == -2) [self pickLocation];
+            else if (k < 0) [self openFileBrowser];
             else [self pickFrom:k];
         }
         return;
@@ -1956,7 +3292,7 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         return;
     }
     NSArray *web = objc_getAssociatedObject(sheet, "links");
-    if (i >= 0 && i < (NSInteger)web.count) [[UIApplication sharedApplication] openURL:[web objectAtIndex:i]];
+    if (i >= 0 && i < (NSInteger)web.count) [GMLinks open:[web objectAtIndex:i] in:self.view];
 }
 
 #pragma mark Công cụ thử
@@ -2064,6 +3400,7 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
 
 - (CGSize)photoSize:(NSDictionary *)m {
     NSDictionary *p = GMVal(m, @"photo");
+    if (!p && GMVal(m, @"geo")) return CGSizeMake(MIN(240, [self maxBubbleW] - 6 - [GMTheme tailWidth]), 150);  // bản đồ nhỏ
     if (!p && [self isVideo:m]) {
         NSDictionary *d = GMVal(m, @"doc");
         p = @{@"w": [GMVal(d, @"w") intValue] > 0 ? GMVal(d, @"w") : @320, @"h": [GMVal(d, @"h") intValue] > 0 ? GMVal(d, @"h") : @180};
@@ -2101,9 +3438,11 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     NSString *type = [r objectForKey:@"type"];
     if ([type isEqual:@"day"]) return 34;
     NSDictionary *m = [r objectForKey:@"msg"];
-    NSString *key = [NSString stringWithFormat:@"%@|%@|%@|%@|%@|%.0f|%d", type, GMVal(m, @"id"), GMVal(m, @"edited"),
+    // Tin bot sửa nhiều lần (bấm nút): chữ / số hàng nút đổi mà cờ «đã sửa» vẫn vậy → khoá gồm cả độ dài chữ, số hàng nút
+    NSString *key = [NSString stringWithFormat:@"%@|%@|%@|%@|%@|%.0f|%d|%@|%lu|%.0f|%@", type, GMVal(m, @"id"), GMVal(m, @"edited"),
                                                [r objectForKey:@"first"], [r objectForKey:@"tail"], _table.bounds.size.width,
-                                               (int)self.readOut];
+                                               (int)self.readOut, [self reactSig:m], (unsigned long)[GMVal(m, @"text") length],
+                                               [self kbHeight:m], [self pollSig:m]];
     NSNumber *cached = [_heights objectForKey:key];
     if (cached) return cached.floatValue;
     CGFloat h;
@@ -2113,19 +3452,30 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
                                      lineBreakMode:GMWordWrap];
         h = ceil(s.height) + 8 + 10;
     } else if (GMVal(m, @"sticker")) {
-        h = [self stickerSize:m].height + 10;
+        h = [self stickerSize:m].height + 10 + [self reactHeight:m] + [self kbHeight:m];
     } else if (GMVal(m, @"voice")) {
         h = kVoiceH + 2 * kPadY + ([self showName:r] ? kNameH : 0) + (GMVal(m, @"reply_to") ? kReplyH : 0) +
-            (GMVal(m, @"fwd") ? kFwdH : 0) + ([[r objectForKey:@"tail"] boolValue] ? 6 : 2);
+            (GMVal(m, @"fwd") ? kFwdH : 0) + ([[r objectForKey:@"tail"] boolValue] ? 6 : 2) + [self reactHeight:m] +
+            [self kbHeight:m];
     } else {
-        BOOL visual = GMVal(m, @"photo") || [self isVideo:m];
+        BOOL visual = GMVal(m, @"photo") || [self isVideo:m] || GMVal(m, @"geo");
         BOOL caption = (!visual && ![self isFile:m]) || [GMVal(m, @"text") length] > 0;
         CGFloat photoH = visual ? [self photoSize:m].height + (caption ? 4 : 0) - (caption ? 0 : 2 * kPadY - 6) : 0;
         if ([self isFile:m]) photoH = kDocH + (caption ? 4 : kDocTimeH);
+        NSDictionary *poll = GMVal(m, @"poll");
+        if (poll) {
+            caption = NO;
+            photoH = [GMPollView heightFor:poll width:[self pollW]] + 2 + kDocTimeH + 4;  // + dòng giờ
+        }
+        if ([GMVal(m, @"contact") isKindOfClass:[NSDictionary class]]) {
+            caption = NO;
+            photoH = kDocH + kDocTimeH;  // danh thiếp: như bong bóng tệp
+        }
         h = (caption ? [self bodySize:m].height : 0) + photoH + 2 * kPadY + ([self showName:r] ? kNameH : 0) +
             (GMVal(m, @"reply_to") ? kReplyH : 0) +
             (GMVal(m, @"fwd") ? kFwdH : 0) +
-            (GMVal(m, @"proxy") ? kProxyH : 0) + ([[r objectForKey:@"tail"] boolValue] ? 6 : 2);
+            (GMVal(m, @"proxy") ? kProxyH : 0) + ([[r objectForKey:@"tail"] boolValue] ? 6 : 2) + [self reactHeight:m] +
+            [self kbHeight:m];
     }
     [_heights setObject:@(h) forKey:key];
     return h;
@@ -2151,6 +3501,8 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         // Ô dùng lại từ tin sticker: ẩn cả ảnh sticker, giờ của nó và hoạt hình (không thì «giờ» cũ còn nổi trên dòng ngày / tin hệ thống)
         c.bubble.hidden = YES;
         c.sticker.hidden = c.stickerTime.hidden = YES;
+        c.reacts.hidden = YES;
+        c.kbd.hidden = YES;
         [c.lottie stop];
         c.lottie.hidden = YES;
         c.pill.hidden = NO;
@@ -2187,6 +3539,12 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         CGFloat stw = [st sizeWithFont:c.stickerTime.font].width + 10;
         c.stickerTime.text = st;
         c.stickerTime.frame = CGRectMake(CGRectGetMaxX(c.sticker.frame) - stw, CGRectGetMaxY(c.sticker.frame) - 17, stw, 17);
+        CGSize rs = GMLayoutChips(GMVal(m, @"reactions"), [self maxBubbleW] - 2 * kPadX - [GMTheme tailWidth], nil);
+        [self fillChips:c msg:m tint:[GMTheme accent] plain:YES
+                     at:CGPointMake(sout ? W - rs.width - 8 : 8, CGRectGetMaxY(c.sticker.frame) + 6) in:c.contentView];
+        CGFloat kw = MIN([self maxBubbleW], 260);
+        [self fillButtons:c msg:m area:CGRectMake(sout ? W - kw - 8 : 8, CGRectGetMaxY(c.sticker.frame) + 6 + [self reactHeight:m] + 2,
+                                                  kw, [self kbHeight:m] - 4)];
         return c;
     }
     c.bubble.hidden = NO;
@@ -2207,19 +3565,35 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     NSString *fwdText = fwd ? [@"Chuyển tiếp từ " stringByAppendingString:fwd] : nil;
     if (fwd) inner = MAX(inner, MIN([fwdText sizeWithFont:c.fwd.font].width, [self maxBubbleW] - 2 * kPadX - t));
     if (proxy) inner = MAX(inner, 170);
+    CGSize chips = GMLayoutChips(GMVal(m, @"reactions"), [self maxBubbleW] - 2 * kPadX - t, nil);
+    inner = MAX(inner, chips.width);
+    CGFloat rh = chips.height > 0 ? chips.height + 6 : 0;
     BOOL isVideo = [self isVideo:m], isFile = [self isFile:m];
     NSDictionary *photo = GMVal(m, @"photo") ?: (isVideo ? GMVal(m, @"doc") : nil);
+    NSDictionary *geo = photo ? nil : GMVal(m, @"geo");  // tin vị trí: bản đồ nhỏ ở chỗ ảnh
+    if (geo) photo = geo;
     BOOL caption = (!photo && !isFile) || [GMVal(m, @"text") length] > 0;
     CGSize ps = [self photoSize:m];
     if (isFile) inner = MAX(caption ? inner : 0, kDocW);
     if (photo) inner = MAX(caption ? inner : 0, ps.width - 2 * kPadX + 6);
+    NSDictionary *poll = GMVal(m, @"poll");
+    if (poll) {
+        caption = NO;
+        inner = MAX(inner, [self pollW]);
+    }
+    NSDictionary *card = [GMVal(m, @"contact") isKindOfClass:[NSDictionary class]] ? GMVal(m, @"contact") : nil;
+    if (card) {
+        caption = NO;
+        inner = MAX(inner, kDocW);
+    }
     NSDictionary *voice = GMVal(m, @"voice");
     if (voice) {
         caption = NO;
         inner = MAX(kVoiceW, name ? inner : 0);
     }
     CGFloat w = inner + 2 * kPadX + t;
-    CGFloat h = [self heightOfRow:r] - (tail ? 6 : 2);
+    CGFloat kh = [self kbHeight:m];
+    CGFloat h = [self heightOfRow:r] - (tail ? 6 : 2) - kh;
     CGFloat x = out ? W - w - 4 : 4;
     c.bubble.frame = CGRectMake(x, 1, w, h);
     c.bubble.image = [GMTheme bubbleOut:out tail:tail];
@@ -2257,10 +3631,16 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         c.photo.frame = CGRectMake(px, py, ps.width, ps.height);
         NSString *pkey = [NSString stringWithFormat:@"%@|%@", self.peer, GMVal(m, @"id")];
         c.photoKey = pkey;
-        UIImage *cached = isVideo ? [GMImages cachedThumbForPeer:self.peer msg:GMVal(m, @"id")]
+        UIImage *cached = geo ? GMMapSnapshotCached([GMVal(geo, @"lat") doubleValue], [GMVal(geo, @"lng") doubleValue], ps)
+                        : isVideo ? [GMImages cachedThumbForPeer:self.peer msg:GMVal(m, @"id")]
                                   : [GMImages cachedPhotoForPeer:self.peer msg:GMVal(m, @"id") big:NO];
-        c.photo.image = cached ?: [GMImages imageFromBase64:GMVal(photo, @"thumb")];
-        if (!cached) {
+        c.photo.image = cached ?: (geo ? nil : [GMImages imageFromBase64:GMVal(photo, @"thumb")]);
+        if (!cached && geo) {
+            __weak GMBubbleCell *wc = c;
+            GMMapSnapshot([GMVal(geo, @"lat") doubleValue], [GMVal(geo, @"lng") doubleValue], ps, GMVal(geo, @"title"), ^(UIImage *img) {
+                if ([wc.photoKey isEqual:pkey]) wc.photo.image = img;
+            });
+        } else if (!cached) {
             __weak GMBubbleCell *wc = c;
             CGFloat maxPx = MAX(ps.width, ps.height) * [UIScreen mainScreen].scale;
             void (^got)(UIImage *) = ^(UIImage *img) {
@@ -2283,7 +3663,23 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         CGFloat vw = [c.videoLen.text sizeWithFont:c.videoLen.font].width + 10;
         c.videoLen.frame = CGRectMake(CGRectGetMinX(c.photo.frame) + 6, CGRectGetMinY(c.photo.frame) + 6, vw, 17);
     }
-    c.docIcon.hidden = c.docName.hidden = c.docInfo.hidden = !isFile;
+    c.docIcon.hidden = c.docName.hidden = c.docInfo.hidden = !isFile && !card;
+    c.docIcon.layer.cornerRadius = card ? 22 : 8;
+    if (card) {
+        // Danh thiếp: vòng chữ cái đầu + tên + số điện thoại
+        NSString *cn = [self contactName:card];
+        NSString *initial = cn.length ? [[cn substringToIndex:1] uppercaseString] : @"?";
+        c.docIcon.text = initial;
+        c.docIcon.backgroundColor = [GMTheme colorFor:GMVal(card, @"user") ?: GMVal(card, @"phone") ?: @"0"];
+        c.docIcon.frame = CGRectMake(cx, cy, 44, 44);
+        c.docName.text = cn.length ? cn : @"Danh thiếp";
+        c.docName.frame = CGRectMake(cx + 52, cy + 3, inner - 52, 19);
+        c.docInfo.text = [GMVal(card, @"phone") length] ? [@"+" stringByAppendingString:[GMVal(card, @"phone") stringByReplacingOccurrencesOfString:@"+" withString:@""]]
+                                                         : @"Không có số";
+        c.docInfo.textColor = out ? [GMTheme checkColor] : [GMTheme secondaryText];
+        c.docInfo.frame = CGRectMake(cx + 52, cy + 23, inner - 52, 17);
+        cy += kDocH + kDocTimeH;
+    }
     if (isFile) {
         NSDictionary *d = GMVal(m, @"doc");
         NSString *name = [GMVal(d, @"name") length] ? GMVal(d, @"name") : @"Tệp";
@@ -2296,6 +3692,17 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         c.docInfo.textColor = out ? [GMTheme checkColor] : [GMTheme secondaryText];
         c.docInfo.frame = CGRectMake(cx + 52, cy + 23, inner - 52, 17);
         cy += kDocH + (caption ? 4 : kDocTimeH);
+    }
+    c.poll.hidden = poll == nil;
+    if (poll) {
+        CGFloat ph = [GMPollView heightFor:poll width:[self pollW]];
+        c.poll.frame = CGRectMake(cx, cy + 2, [self pollW], ph);
+        NSNumber *mid = GMVal(m, @"id");
+        __weak GMChatViewController *wp = self;
+        c.poll.vote = ^(NSArray *o) { [wp vote:o msg:mid]; };
+        c.poll.toggle = ^(NSString *o) { [wp togglePollOption:o msg:mid]; };
+        [c.poll showPoll:poll selected:[_pollSel objectForKey:mid] tint:out ? [GMTheme checkColor] : [GMTheme accent]];
+        cy += ph + 2;
     }
     [self refreshDoc:c];
     [self gifFor:c msg:m on:gif];
@@ -2332,7 +3739,12 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     CGFloat tw = [time sizeWithFont:c.time.font].width;
     c.time.text = time;
     c.time.textColor = out ? [GMTheme checkColor] : [GMTheme secondaryText];
-    c.time.frame = CGRectMake(cx + inner - tw, h - kPadY - 13, tw, 13);
+    c.time.frame = CGRectMake(cx + inner - tw, h - kPadY - 13 - rh, tw, 13);
+    [self fillChips:c msg:m tint:out ? [GMTheme checkColor] : [GMTheme accent] plain:NO
+                 at:CGPointMake(cx, h - kPadY - chips.height) in:c.bubble];
+    // Nút dưới tin của bot: ngay dưới bong bóng, rộng ít nhất ~260 điểm
+    CGFloat aw = MAX(w - t, MIN([self maxBubbleW] - t, 260));
+    [self fillButtons:c msg:m area:CGRectMake(out ? x + w - t - aw : x + t, 1 + h + 4, aw, kh - 4)];
     c.time.hidden = photo && !caption && !voice;
     if (photo && !caption) {
         c.photoTime.text = time;

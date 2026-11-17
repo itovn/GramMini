@@ -81,6 +81,11 @@ typedef NS_ENUM(NSInteger, GMThemeMode) { GMThemeLight, GMThemeDark, GMThemeAuto
 + (BOOL)sameDay:(NSNumber *)a as:(NSNumber *)b;
 /// Nội dung xem trước của tin (chữ, hoặc «Ảnh, chú thích»…).
 + (NSString *)preview:(NSDictionary *)msg;
+/// Emoji vẽ được trên máy này: phông Apple Color Emoji của iOS 5 / 6 thiếu emoji mới (Unicode 7+, chuỗi ghép ZWJ) — vẽ ra ô
+/// trống.
++ (BOOL)emojiRenders:(NSString *)emoji;
+/// Emoji để hiện cho một cảm xúc: chính nó nếu máy vẽ được, không thì emoji gần nghĩa (🥰 → 😍, 🤔 → 😕…), không có thì «•».
++ (NSString *)reactionGlyph:(NSString *)emoji;
 /// Nút chữ có nền màu.
 + (UIButton *)button:(NSString *)title;
 /// Thông báo nhỏ hiện giữa dưới màn rồi tự ẩn.

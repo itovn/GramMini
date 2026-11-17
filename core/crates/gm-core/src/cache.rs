@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
-const DIRS: [&str; 3] = ["media", "avatars", "tmp"];
+const DIRS: [&str; 4] = ["media", "avatars", "tmp", "maps"];
 /// Tệp vừa dùng / đang ghi trong khoảng này không tự xoá (đang xem, đang tải, đang ghi âm).
 const PROTECT: Duration = Duration::from_secs(10 * 60);
 /// Tệp tạm quá chừng này thì xoá.
@@ -61,6 +61,8 @@ pub struct Entry {
 fn classify(dir: &str, name: &str) -> (&'static str, Option<String>, bool) {
     match dir {
         "avatars" => ("avatar", name.split_once('_').map(|(p, _)| p.to_string()), name.ends_with(".part")),
+        // Ô bản đồ OpenStreetMap (map.tile)
+        "maps" => ("other", None, name.ends_with(".tmp")),
         "media" => {
             let peer = name.get(1..).and_then(|r| r.split_once('_')).map(|(p, _)| p.to_string());
             let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();

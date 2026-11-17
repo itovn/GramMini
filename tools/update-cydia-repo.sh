@@ -20,7 +20,11 @@ dpkg-scanpackages -m debs /dev/null 2>/dev/null |
     awk -v dep="Depiction: $SITE/cydia/depiction.html" -v home="Homepage: $SITE/" '
         /^Depiction: / { hasdep = 1 } /^Homepage: / { hashome = 1 }
         /^$/ { if (!hasdep) print dep; if (!hashome) print home; hasdep = hashome = 0; print; next }
-        { print }' > Packages
+        { print }' > Packages.utf8
+# Cydia 1.1.30 trên iOS 5 / 6 đọc Description qua apt với bảng mã US-ASCII → chữ có dấu thành «?» (e8cbc80). Các .deb cũ còn mô
+# tả có dấu → bỏ dấu cả tệp (glibc: «Nhắn» → «Nhan», «đ» → «d»; tên gói, link vốn là ASCII).
+iconv -f UTF-8 -t ASCII//TRANSLIT Packages.utf8 > Packages
+rm -f Packages.utf8
 gzip -9nc Packages > Packages.gz
 bzip2 -9c Packages > Packages.bz2
 {

@@ -3,7 +3,7 @@
 
 /// Màn chat kiểu Telegram 4.9: bong bóng có đuôi (gom theo người gửi), giờ + ✓✓ trong bong bóng, vạch ngày, tin hệ thống,
 /// trích dẫn tin được trả lời. Nhấn giữ: Trả lời / Sao chép / Chuyển tiếp / Sửa / Xoá. Chạm tin có link: link proxy → màn Proxy (điền
-/// sẵn, tự thử); link web → Safari. Tải thêm tin cũ khi cuộn lên; tin mới / sửa / xoá / đã đọc cập nhật trực tiếp.
+/// sẵn, tự thử); link Telegram (t.me, @tên) → mở chat ngay trong app (GMLinks); link web → Safari. Tải thêm tin cũ khi cuộn lên; tin mới / sửa / xoá / đã đọc cập nhật trực tiếp.
 @interface GMChatViewController : UIViewController <UITableViewDataSource, UITableViewDelegate, UITextViewDelegate,
                                                     UIActionSheetDelegate, UIImagePickerControllerDelegate,
                                                     UINavigationControllerDelegate, QLPreviewControllerDataSource>
@@ -22,6 +22,10 @@
 @property (nonatomic, strong) NSNumber *topic;
 @property (nonatomic) NSInteger topicColor;
 @property (nonatomic, copy) NSString *groupName;
+/// Chưa vào nhóm / kênh này (mở từ link t.me, kết quả tìm): thanh «Tham gia» thay ô nhập. `joinHash`: mã link mời (nhóm riêng
+/// xem trước được) — tham gia bằng mã thay vì @tên.
+@property (nonatomic) BOOL left;
+@property (nonatomic, copy) NSString *joinHash;
 /// Công cụ thử: không đánh dấu đã đọc (xem chat thật mà không đổi trạng thái đọc của tài khoản).
 + (void)setDebugNoRead:(BOOL)on;
 /// Tệp đang xem bằng QuickLook.
@@ -33,6 +37,30 @@
 - (void)debugCopyFromBottom:(NSInteger)k;
 - (void)debugMenuFromBottom:(NSInteger)k;
 - (void)debugReplyFromBottom:(NSInteger)k;
+/// Công cụ thử: thả cảm xúc `emoji` («-» = gỡ) vào tin thứ k từ dưới lên; mở bảng chọn cảm xúc (i ≥ 0: chạm emoji thứ i).
+- (void)debugReactFromBottom:(NSInteger)k emoji:(NSString *)emoji;
+- (void)debugReactPickerFromBottom:(NSInteger)k pick:(NSInteger)i;
+/// Công cụ thử: chạm nút (hàng r, cột c) dưới tin thứ k từ dưới lên; phím thứ i của bàn phím bot; bật / tắt bàn phím bot.
+- (void)debugInlineButtonFromBottom:(NSInteger)k row:(NSInteger)r col:(NSInteger)c;
+- (void)debugBotKey:(NSInteger)i;
+- (void)debugToggleBotKeyboard;
+/// Công cụ thử: bỏ phiếu ở tin thứ k từ dưới lên (`idx`: «0», «0,2»; «-» = rút phiếu).
+- (void)debugVoteFromBottom:(NSInteger)k options:(NSString *)idx;
+- (void)debugSendPoll:(NSString *)spec;
+/// Công cụ thử: ghim / bỏ ghim tin thứ k từ dưới lên; chạm thanh «Tin đã ghim».
+- (void)debugPinFromBottom:(NSInteger)k;
+- (void)debugPinTap;
+/// Công cụ thử: bảng hẹn giờ (như nhấn giữ «Gửi»); mở danh sách tin hẹn giờ.
+- (void)debugScheduleSheet;
+- (void)debugOpenScheduled;
+/// Công cụ thử: gửi vị trí «vĩ độ kinh độ».
+- (void)debugSendGeo:(NSString *)arg;
+/// Công cụ thử: chọn mục gợi ý thứ i (khung «/»).
+- (void)debugSuggest:(NSInteger)i;
+/// Công cụ thử: mở màn mã QR chuyển khoản.
+- (void)debugOpenVietQR;
+/// Công cụ thử: gửi danh thiếp «số tên».
+- (void)debugSendContact:(NSString *)arg;
 - (void)debugForwardFromBottom:(NSInteger)k to:(NSString *)peer;
 - (void)debugPlayVoiceFromBottom:(NSInteger)k;
 - (void)debugOpenDocFromBottom:(NSInteger)k;

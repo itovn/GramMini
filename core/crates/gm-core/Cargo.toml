@@ -21,6 +21,8 @@ png = "0.18"
 # GitHub (TLS / chứng chỉ gốc cũ). ring vá cho armv7 Apple: tools/rust/cargo-ios6.sh (vendor-ring.sh), như Côn Bằng TV.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
 sha2 = "0.11"
+# Mã QR chuyển khoản VietQR (Rust thuần)
+qrcode = { version = "0.14", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 # statvfs (chỗ trống của máy), utimes (đánh dấu tệp đệm vừa dùng)

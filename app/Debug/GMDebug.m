@@ -22,6 +22,12 @@
 #import <MediaPlayer/MediaPlayer.h>
 #import "GMFiles.h"
 #import "GMHevcTranscoder.h"
+#import "GMLinks.h"
+#import "GMReactionPicker.h"
+#import "GMScheduledViewController.h"
+#import "GMMap.h"
+#import "GMQuickReplies.h"
+#import "GMVietQRViewController.h"
 
 static NSString *const kCmdFile = @"/var/mobile/Documents/GramMini-cmd.txt";
 
@@ -74,6 +80,12 @@ static void GMFindText(UIView *v, NSString *text) {
 + (void)run:(NSString *)line {
     GMAppDelegate *app = (GMAppDelegate *)[UIApplication sharedApplication].delegate;
     UINavigationController *nav = (UINavigationController *)app.tabs.selectedViewController;  // thanh điều hướng của mục đang chọn
+    // iPad: lệnh nhắm vào bên phải (chat đang mở) nếu có; «L <lệnh>» = bên trái
+    if ([line hasPrefix:@"L "]) {
+        line = [line substringFromIndex:2];
+    } else if (app.detail && ![app.detail.topViewController isKindOfClass:[GMEmptyDetailViewController class]]) {
+        nav = app.detail;
+    }
     UIViewController *top = nav.topViewController;
     NSRange sp = [line rangeOfString:@" "];
     NSString *cmd = sp.location == NSNotFound ? line : [line substringToIndex:sp.location];
@@ -193,6 +205,74 @@ static void GMFindText(UIView *v, NSString *text) {
         [(GMChatViewController *)top debugMenuFromBottom:arg.integerValue];
     } else if ([cmd isEqual:@"replymsg"] && [top isKindOfClass:[GMChatViewController class]]) {
         [(GMChatViewController *)top debugReplyFromBottom:arg.integerValue];
+    } else if ([cmd isEqual:@"react"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // react <k> <emoji|-> — thả / gỡ cảm xúc ở tin thứ k từ dưới lên
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        [(GMChatViewController *)top debugReactFromBottom:[[p objectAtIndex:0] integerValue] emoji:p.count > 1 ? [p objectAtIndex:1] : @"-"];
+    } else if ([cmd isEqual:@"reactpick"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // reactpick <k> [i] — mở bảng chọn cảm xúc cho tin thứ k (i: chạm emoji thứ i)
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        [(GMChatViewController *)top debugReactPickerFromBottom:[[p objectAtIndex:0] integerValue]
+                                                           pick:p.count > 1 ? [[p objectAtIndex:1] integerValue] : -1];
+    } else if ([cmd isEqual:@"kbtn"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // kbtn <k> <hàng> <cột> — chạm nút dưới tin thứ k từ dưới lên
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        if (p.count == 3) {
+            [(GMChatViewController *)top debugInlineButtonFromBottom:[[p objectAtIndex:0] integerValue] row:[[p objectAtIndex:1] integerValue]
+                                                                 col:[[p objectAtIndex:2] integerValue]];
+        }
+    } else if ([cmd isEqual:@"sendcontact"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // sendcontact <số> <tên> — gửi danh thiếp vào chat đang mở (chỉ chat được phép thử)
+        [(GMChatViewController *)top debugSendContact:arg];
+    } else if ([cmd isEqual:@"vietqr"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // vietqr — mở màn mã QR chuyển khoản; qrfill <bin>|<số TK>|<chủ TK>|<số tiền>|<nội dung> — điền sẵn; qrsend — bấm «Gửi»
+        [(GMChatViewController *)top debugOpenVietQR];
+    } else if ([cmd isEqual:@"qrfill"] && [top isKindOfClass:[GMVietQRViewController class]]) {
+        [(id)top performSelector:@selector(debugFill:) withObject:arg];
+    } else if ([cmd isEqual:@"qrsend"] && [top isKindOfClass:[GMVietQRViewController class]]) {
+        [(id)top performSelector:@selector(sendTapped)];
+    } else if ([cmd isEqual:@"quickadd"]) {
+        // quickadd <từ khoá> <chữ> — thêm tin nhắn nhanh; quickdel <từ khoá>; suggest <i> — chọn gợi ý «/»
+        NSRange s2 = [arg rangeOfString:@" "];
+        if (s2.location != NSNotFound) [GMQuickReplies save:[arg substringToIndex:s2.location] text:[arg substringFromIndex:s2.location + 1]];
+    } else if ([cmd isEqual:@"quickdel"]) {
+        [GMQuickReplies remove:arg];
+    } else if ([cmd isEqual:@"suggest"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugSuggest:arg.integerValue];
+    } else if ([cmd isEqual:@"sendgeo"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // sendgeo <vĩ độ> <kinh độ> — gửi vị trí vào chat đang mở (chỉ chat được phép thử)
+        [(GMChatViewController *)top debugSendGeo:arg];
+    } else if ([cmd isEqual:@"mapview"]) {
+        // mapview <vĩ độ> <kinh độ> — mở màn xem bản đồ (không gửi gì)
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        if (p.count == 2) {
+            [nav pushViewController:[[GMMapViewController alloc] initWithLat:[[p objectAtIndex:0] doubleValue] lng:[[p objectAtIndex:1] doubleValue]
+                                                                       title:nil] animated:YES];
+        }
+    } else if ([cmd isEqual:@"schedsheet"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // schedsheet — bảng hẹn giờ cho chữ đang soạn (gõ trước bằng «type»); chọn bằng «sheet <i>»
+        [(GMChatViewController *)top debugScheduleSheet];
+    } else if ([cmd isEqual:@"schedlist"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugOpenScheduled];
+    } else if ([cmd isEqual:@"schedact"] && [top isKindOfClass:[GMScheduledViewController class]]) {
+        // schedact <i> send|delete — gửi ngay / huỷ tin hẹn giờ thứ i
+        [(id)top performSelector:@selector(debugAct:) withObject:arg];
+    } else if ([cmd isEqual:@"pin"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // pin <k> — ghim / bỏ ghim tin thứ k từ dưới lên; pintap — chạm thanh tin ghim
+        [(GMChatViewController *)top debugPinFromBottom:arg.integerValue];
+    } else if ([cmd isEqual:@"pintap"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugPinTap];
+    } else if ([cmd isEqual:@"sendpoll"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // sendpoll <câu hỏi>|<lựa chọn>|<lựa chọn>[|*] — gửi bình chọn vào chat đang mở (chỉ chat được phép thử)
+        [(GMChatViewController *)top debugSendPoll:arg];
+    } else if ([cmd isEqual:@"vote"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // vote <k> <0|0,2|-> — bỏ phiếu / rút phiếu ở bình chọn thứ k từ dưới lên
+        NSArray *p = [arg componentsSeparatedByString:@" "];
+        if (p.count == 2) [(GMChatViewController *)top debugVoteFromBottom:[[p objectAtIndex:0] integerValue] options:[p objectAtIndex:1]];
+    } else if ([cmd isEqual:@"botkey"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugBotKey:arg.integerValue];
+    } else if ([cmd isEqual:@"botkbd"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugToggleBotKeyboard];
     } else if ([cmd isEqual:@"forward"] && [top isKindOfClass:[GMChatViewController class]]) {
         NSArray *p = [arg componentsSeparatedByString:@" "];
         if (p.count == 2) [(GMChatViewController *)top debugForwardFromBottom:[[p objectAtIndex:0] integerValue] to:[p objectAtIndex:1]];
@@ -221,6 +301,7 @@ static void GMFindText(UIView *v, NSString *text) {
     } else if ([cmd isEqual:@"opendoc"] && [top isKindOfClass:[GMChatViewController class]]) {
         [(GMChatViewController *)top debugOpenDocFromBottom:arg.integerValue];
     } else if ([cmd isEqual:@"dismiss"]) {
+        [GMReactionPicker dismissShown];
         [app.tabs dismissViewControllerAnimated:YES completion:nil];
     } else if ([cmd isEqual:@"sel"]) {
         // sel <tên hàm không đối số hoặc một đối số sender> — gọi trên màn trên cùng (toggleEdit, showInfo, gmDelete:…). Luôn
@@ -385,6 +466,9 @@ static void GMFindText(UIView *v, NSString *text) {
             }
             [s dismissWithClickedButtonIndex:i animated:YES];
         }
+    } else if ([cmd isEqual:@"link"]) {
+        // link <url> — mở link như chạm trong chat (t.me / @tên → chat, link mời → hỏi tham gia, web → Safari)
+        [GMLinks open:arg in:top.view];
     } else if ([cmd isEqual:@"call"]) {
         // call <lệnh lõi> [json] — ghi kết quả vào nhật ký (bỏ trường «chats»: có tên chat)
         NSRange s2 = [arg rangeOfString:@" "];

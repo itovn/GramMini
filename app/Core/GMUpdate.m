@@ -2,6 +2,7 @@
 #import "GMCore.h"
 #import "GMLog.h"
 #import "GMTheme.h"
+#import "GMAlert.h"
 #import <UIKit/UIKit.h>
 #include <spawn.h>
 #include <sys/stat.h>
@@ -17,29 +18,6 @@ static NSDate *gLastCheck;
 static BOOL gBusy;       // đang tải / cài
 static BOOL gChecking;   // đang hỏi GitHub
 static BOOL gPrompting;  // đang hiện hộp «Có bản mới»
-
-#pragma mark - Hộp thoại có khối xử lý
-
-/// UIAlertView gọi khối khi bấm nút (iOS 5 / 6 chưa có UIAlertController).
-@interface GMBlockAlert : UIAlertView <UIAlertViewDelegate>
-@property (nonatomic, copy) void (^done)(NSInteger index);
-@end
-
-@implementation GMBlockAlert
-- (void)alertView:(UIAlertView *)a clickedButtonAtIndex:(NSInteger)i {
-    if (self.done) self.done(i);
-    self.done = nil;  // khối giữ hộp → bỏ để giải phóng
-}
-@end
-
-static GMBlockAlert *GMAlertShow(NSString *title, NSString *msg, NSString *cancel, NSString *other, void (^done)(NSInteger)) {
-    GMBlockAlert *a = [[GMBlockAlert alloc] initWithTitle:title message:msg delegate:nil cancelButtonTitle:cancel otherButtonTitles:nil];
-    if (other) [a addButtonWithTitle:other];
-    a.delegate = a;
-    a.done = done;
-    [a show];
-    return a;
-}
 
 static UIView *GMTopView(void) {
     UIViewController *vc = [UIApplication sharedApplication].keyWindow.rootViewController;
