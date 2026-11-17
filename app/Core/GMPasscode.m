@@ -23,10 +23,38 @@ static NSString *GMHash(NSString *salt, NSString *code) {
     return s;
 }
 
+NSString *const GMPasscodeUnlockedNotification = @"GMPasscodeUnlocked";
+
 static UIWindow *gLockWindow;
 static NSDate *gLeftAt;
-static int gFails;
-static NSDate *gBlockedUntil;
+
+// Số lần nhập sai liên tiếp + khoá tới lúc nào: lưu lại (kiểm bảo mật 17/11/2026 — trước chỉ nằm trong bộ nhớ, tắt app mở lại
+// là đếm lại từ đầu → thử hết 10 000 mã trong vài giờ). Sai từ lần thứ 5: chờ 30 giây, rồi 1, 5, 15 phút, 1 giờ.
+static NSString *const kFailsKey = @"passcode.fails", *const kUntilKey = @"passcode.until";
+
+static NSTimeInterval GMLockRemaining(void) {
+    double until = [[NSUserDefaults standardUserDefaults] doubleForKey:kUntilKey];
+    double left = until - [[NSDate date] timeIntervalSince1970];
+    return left > 3600 ? 3600 : left;  // đồng hồ máy bị chỉnh lùi: không chờ quá 1 giờ
+}
+
+static void GMLockFailed(void) {
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    NSInteger fails = [d integerForKey:kFailsKey] + 1;
+    [d setInteger:fails forKey:kFailsKey];
+    if (fails >= 5) {
+        static const int waits[] = {30, 60, 300, 900, 3600};
+        int w = waits[MIN(fails - 5, 4)];
+        [d setDouble:[[NSDate date] timeIntervalSince1970] + w forKey:kUntilKey];
+    }
+    [d synchronize];
+}
+
+static void GMLockSucceeded(void) {
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    [d removeObjectForKey:kFailsKey];
+    [d removeObjectForKey:kUntilKey];
+}
 
 @interface GMLockViewController ()
 /// Nằm trên cửa sổ khoá riêng (iOS 5: tự xoay theo thanh trạng thái — cửa sổ phụ không được iOS 5 xoay khi hiện lúc máy đã nằm ngang).
@@ -120,6 +148,7 @@ static NSDate *gBlockedUntil;
                              gLockWindow.hidden = YES;
                              gLockWindow = nil;
                              [[[UIApplication sharedApplication].delegate window] makeKeyWindow];
+                             [[NSNotificationCenter defaultCenter] postNotificationName:GMPasscodeUnlockedNotification object:nil];
                          }];
     };
     gLockWindow = w;
@@ -337,20 +366,19 @@ static NSDate *gBlockedUntil;
         [self shake:@"Hai lần nhập không khớp — nhập lại."];
         return;
     }
-    if (gBlockedUntil && [gBlockedUntil timeIntervalSinceNow] > 0) {
-        [self shake:[NSString stringWithFormat:@"Sai nhiều lần — thử lại sau %.0f giây.", [gBlockedUntil timeIntervalSinceNow]]];
+    NSTimeInterval wait = GMLockRemaining();
+    if (wait > 0) {
+        [self shake:wait > 90 ? [NSString stringWithFormat:@"Sai nhiều lần — thử lại sau %.0f phút.", ceil(wait / 60)]
+                              : [NSString stringWithFormat:@"Sai nhiều lần — thử lại sau %.0f giây.", ceil(wait)]];
         return;
     }
     if ([GMPasscode check:code]) {
-        gFails = 0;
+        GMLockSucceeded();
         if (self.done) self.done(code);
         return;
     }
-    if (++gFails >= 5) {
-        gFails = 0;
-        gBlockedUntil = [NSDate dateWithTimeIntervalSinceNow:30];
-        GMLog(@"mật mã sai 5 lần — khoá 30 giây");
-    }
+    GMLockFailed();
+    if (GMLockRemaining() > 0) GMLog(@"mật mã sai nhiều lần — khoá %.0f giây", GMLockRemaining());
     [self shake:@"Sai mật mã."];
 }
 

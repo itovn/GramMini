@@ -16,6 +16,12 @@ use tiny_skia::{
     RadialGradient, Shader, SpreadMode, Stroke, StrokeDash, Transform,
 };
 
+/// Giới hạn cho tệp lạ (sticker do người khác gửi): cỡ tệp, cỡ JSON sau giải nén, số điểm màu, số lượt vẽ lớp mỗi khung
+const MAX_TGS_BYTES: usize = 512 << 10;
+const MAX_JSON_BYTES: usize = 2 << 20;
+const MAX_GRADIENT_STOPS: u64 = 64;
+const MAX_LAYER_VISITS: u32 = 4000;
+
 type P = [f32; 2];
 
 // ───────────────────────────── Đọc JSON ─────────────────────────────
@@ -680,7 +686,8 @@ fn parse_gradient(v: &Value) -> Gradient {
         s: Prop::parse(v.get("s"), &[0.0, 0.0]),
         e: Prop::parse(v.get("e"), &[0.0, 0.0]),
         g: Prop::parse(gv.and_then(|g| g.get("k")), &[]),
-        count: gv.and_then(|g| g.get("p")).and_then(Value::as_u64).unwrap_or(0) as usize,
+        // Số điểm màu do tệp khai (kiểm bảo mật 17/11/2026: tệp lạ khai 4 tỉ → cấp phát hỏng → app tắt) — thực tế vài điểm
+        count: gv.and_then(|g| g.get("p")).and_then(Value::as_u64).unwrap_or(0).min(MAX_GRADIENT_STOPS) as usize,
     }
 }
 
@@ -782,13 +789,23 @@ pub struct Animation {
 impl Animation {
     /// Đọc TGS (gzip) hoặc JSON Lottie.
     pub fn parse(data: &[u8]) -> Result<Animation, String> {
+        // Giới hạn cỡ (kiểm bảo mật 17/11/2026): Telegram cho TGS tối đa 64 KB nén; «bom gzip» 16 KB nở ra 16 MB JSON → cây
+        // serde_json vài trăm MB → máy 256 MB tắt app ngay khi mở chat (sticker tự chạy)
+        if data.len() > MAX_TGS_BYTES {
+            return Err("tệp quá lớn".into());
+        }
         let json: Vec<u8>;
         let raw = if data.starts_with(&[0x1f, 0x8b]) {
-            let mut d = flate2::read::GzDecoder::new(data).take(16 << 20);
+            let mut d = flate2::read::GzDecoder::new(data).take(MAX_JSON_BYTES as u64 + 1);
             let mut out = Vec::new();
             d.read_to_end(&mut out).map_err(|e| format!("gzip: {e}"))?;
+            if out.len() > MAX_JSON_BYTES {
+                return Err("tệp giải nén quá lớn".into());
+            }
             json = out;
             &json[..]
+        } else if data.len() > MAX_JSON_BYTES {
+            return Err("tệp quá lớn".into());
         } else {
             data
         };
@@ -831,7 +848,8 @@ impl Animation {
         let k = (width as f32 / self.w).min(height as f32 / self.h);
         let base = Transform::from_translate((width as f32 - self.w * k) / 2.0, (height as f32 - self.h * k) / 2.0).pre_scale(k, k);
         let t = (self.ip + index).min(self.op - 0.001);
-        self.draw_layers(&self.layers, t, base, 1.0, &mut pm, 0);
+        let mut budget = MAX_LAYER_VISITS;
+        self.draw_layers(&self.layers, t, base, 1.0, &mut pm, 0, &mut budget);
         true
     }
 
@@ -851,12 +869,19 @@ impl Animation {
         (m, op)
     }
 
-    fn draw_layers(&self, layers: &[Layer], t: f32, base: Transform, opacity: f32, pm: &mut PixmapMut, depth: u32) {
+    /// `budget`: số lượt vẽ lớp còn lại trong khung này — lớp lồng (precomp) trỏ lại chính nó N lần thì độ sâu 8 vẫn ra N^9
+    /// lượt (kiểm bảo mật 17/11/2026: tệp 400 byte treo hàng vẽ sticker mãi) → hết lượt thì thôi vẽ.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_layers(&self, layers: &[Layer], t: f32, base: Transform, opacity: f32, pm: &mut PixmapMut, depth: u32, budget: &mut u32) {
         if depth > 8 {
             return;
         }
         // Lớp đầu danh sách nằm trên cùng → vẽ từ cuối lên
         for l in layers.iter().rev() {
+            if *budget == 0 {
+                return;
+            }
+            *budget -= 1;
             if l.skip || t < l.ip || t >= l.op {
                 continue;
             }
@@ -871,7 +896,7 @@ impl Animation {
                 4 => draw_items(&l.items, local, m, op, pm),
                 0 => {
                     if let Some(inner) = l.ref_id.as_ref().and_then(|id| self.assets.get(id)) {
-                        self.draw_layers(inner, local, m, op, pm, depth + 1);
+                        self.draw_layers(inner, local, m, op, pm, depth + 1, budget);
                     }
                 }
                 1 => {
@@ -1068,6 +1093,37 @@ fn draw_items(items: &[Item], t: f32, m: Transform, opacity: f32, pm: &mut Pixma
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn gz(json: &[u8]) -> Vec<u8> {
+        use std::io::Write;
+        let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+        e.write_all(json).unwrap();
+        e.finish().unwrap()
+    }
+
+    /// Tệp lạ (kiểm bảo mật 17/11/2026): bom gzip bị từ chối; gradient khai 4 tỉ điểm và lớp lồng tự trỏ vẽ được nhanh, không tắt app
+    #[test]
+    fn hostile_files() {
+        let mut bomb = b"[".to_vec();
+        bomb.extend(std::iter::repeat_n(b"0,"[..].iter().copied(), 3 << 20).flatten());
+        bomb.extend_from_slice(b"0]");
+        assert!(Animation::parse(&gz(&bomb)).is_err());
+
+        let grad = br#"{"w":64,"h":64,"fr":30,"ip":0,"op":2,"layers":[{"ty":4,"ip":0,"op":2,"st":0,"ks":{},"shapes":[
+            {"ty":"rc","p":{"k":[32,32]},"s":{"k":[40,40]},"r":{"k":0}},
+            {"ty":"gf","o":{"k":100},"t":1,"s":{"k":[0,0]},"e":{"k":[64,64]},"g":{"p":4000000000,"k":{"k":[0,1,0,0,1,0,0,1]}}}]}]}"#;
+        let a = Animation::parse(grad).unwrap();
+        let mut buf = vec![0u8; 64 * 64 * 4];
+        a.render(0.0, &mut buf, 64, 64);
+
+        let rf = r#"{"ty":0,"refId":"a","ip":0,"op":2,"st":0,"ks":{}}"#;
+        let many = vec![rf; 10].join(",");
+        let json = format!(r#"{{"w":64,"h":64,"fr":30,"ip":0,"op":2,"assets":[{{"id":"a","layers":[{many}]}}],"layers":[{rf}]}}"#);
+        let a = Animation::parse(json.as_bytes()).unwrap();
+        let t = std::time::Instant::now();
+        a.render(0.0, &mut buf, 64, 64);
+        assert!(t.elapsed().as_secs() < 2);
+    }
 
     #[test]
     fn ease_endpoints() {

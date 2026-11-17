@@ -353,6 +353,11 @@ fn header(d: &[u8], pos: &mut usize, limit: usize) -> Option<(u32, usize, usize,
     let id = vint(d, pos, true)?;
     let size = vint(d, pos, false)?;
     let start = *pos;
+    // Mã / cỡ nằm vắt qua cuối phần tử cha (tệp lạ — kiểm bảo mật 17/11/2026: tệp 20 byte làm `&d[s..e]` với s > e → panic
+    // → app tắt mỗi lần mở chat có sticker đó)
+    if start > limit || limit > d.len() {
+        return None;
+    }
     if size == UNKNOWN {
         return Some((id as u32, start, limit, true));
     }
@@ -582,6 +587,16 @@ fn parse_webm(d: &[u8]) -> Option<Parsed> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Tệp lạ: phần tử con vắt qua cuối phần tử cha (kiểm bảo mật 17/11/2026) — trả None, không panic
+    #[test]
+    fn hostile_header_no_panic() {
+        let d = [0x1a, 0x45, 0xdf, 0xa3, 0x80, 0x18, 0x53, 0x80, 0x67, 0x8a, 0x16, 0x54, 0xae, 0x6b, 0x85, 0xae, 0x81, 0x83, 0x81, 0x01];
+        assert!(Video::parse(d.to_vec()).is_none());
+        for n in 0..d.len() {
+            let _ = Video::parse(d[..n].to_vec());
+        }
+    }
 
     #[test]
     fn vint_reads_sizes() {

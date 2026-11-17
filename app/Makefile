@@ -33,7 +33,7 @@ include $(THEOS_MAKE_PATH)/application.mk
 # Quyền com.apple.springboard.launchapplications để mở lại app sau khi cài + khởi động lại SpringBoard.
 TOOL_NAME = gmupdate
 gmupdate_FILES = Helper/gmupdate.c
-gmupdate_FRAMEWORKS = CoreFoundation
+gmupdate_FRAMEWORKS = CoreFoundation Security
 gmupdate_INSTALL_PATH = /usr/libexec/grammini
 gmupdate_CODESIGN_FLAGS = -SHelper/entitlements.plist -Hsha1
 include $(THEOS_MAKE_PATH)/tool.mk

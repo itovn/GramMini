@@ -103,6 +103,9 @@ impl Drop for Encoder {
     }
 }
 
+/// Tin thoại dài nhất giải mã được (giây) — 15 phút ở 24 kHz ≈ 43 MB WAV
+const MAX_VOICE_SECS: usize = 15 * 60;
+
 /// Phần đầu WAV PCM 16 bit.
 fn wav_header(rate: u32, channels: u16, data_len: u32) -> Vec<u8> {
     let mut h = Vec::with_capacity(44);
@@ -133,23 +136,31 @@ pub fn ogg_to_wav(ogg_data: &[u8], rate: u32) -> io::Result<(Vec<u8>, f64)> {
     let mut dec = Decoder::new(rate as i32, channels)?;
     let max = rate as usize * 120 / 1000 * channels; // khung dài nhất 120 ms
     let mut frame = vec![0i16; max];
-    let mut pcm: Vec<i16> = Vec::new();
+    // Ghi thẳng vào WAV (không giữ thêm một bản PCM) và giới hạn thời lượng: gói Opus 2 byte giải ra 120 ms âm thanh — tệp lạ
+    // ~100 KB nở ra vài trăm MB → app tắt (kiểm bảo mật 17/11/2026)
+    let max_samples = rate as usize * MAX_VOICE_SECS;
+    let mut out = wav_header(rate, 1, 0);
+    let (mut skip, mut total) = (pre_skip, 0usize);
     for p in packets.iter().skip(2) {
         // gói 0 = OpusHead, gói 1 = OpusTags
         let n = dec.decode(p, &mut frame)?;
-        if channels == 1 {
-            pcm.extend_from_slice(&frame[..n]);
-        } else {
-            pcm.extend((0..n).map(|i| ((frame[2 * i] as i32 + frame[2 * i + 1] as i32) / 2) as i16));
+        for i in 0..n {
+            let s = if channels == 1 { frame[i] } else { ((frame[2 * i] as i32 + frame[2 * i + 1] as i32) / 2) as i16 };
+            if skip > 0 {
+                skip -= 1;
+                continue;
+            }
+            if total >= max_samples {
+                return Err(err("tin thoại quá dài"));
+            }
+            out.extend_from_slice(&s.to_le_bytes());
+            total += 1;
         }
     }
-    let pcm = if pcm.len() > pre_skip { &pcm[pre_skip..] } else { &pcm[..0] };
-    let mut out = wav_header(rate, 1, (pcm.len() * 2) as u32);
-    out.reserve(pcm.len() * 2);
-    for s in pcm {
-        out.extend_from_slice(&s.to_le_bytes());
-    }
-    Ok((out, pcm.len() as f64 / rate as f64))
+    let data_len = (total * 2) as u32;
+    out[4..8].copy_from_slice(&(36 + data_len).to_le_bytes());
+    out[40..44].copy_from_slice(&data_len.to_le_bytes());
+    Ok((out, total as f64 / rate as f64))
 }
 
 /// Đọc WAV PCM 16 bit (đơn kênh) — tệp ghi âm của app. Trả (mẫu, tần số).

@@ -283,16 +283,63 @@
 
 ### Bản 1.4.0 — 11 tính năng: link t.me, cảm xúc, bot, bình chọn, ghim, nhắc hẹn, vị trí, iPad chia đôi, «/», VietQR, danh thiếp (17/11/2026)
 
-- Anh hỏi còn thiếu gì cấp thiết (tham khảo Roza) → làm lần lượt 11 mục (D31, D32). Lõi: 6 mô-đun mới trong `service/`
-  (links, react, bots, poll, pins, sched, geo, vietqr, contact), 14 phép thử (đọc link t.me, hex, VietQR / CRC, bỏ dấu).
-- Thử trên iPad 1 (iOS 5.1.1, bản debug — tài khoản khác máy chính; chỉ xem chat / kênh công khai, gửi chỉ trong Tin nhắn đã lưu):
-  t.me/<tên>, @tên trong tin, link mời sai mã → báo; thanh «Tham gia kênh» (không bấm); viên cảm xúc + số gọn (8,8K), bảng chọn
-  44 emoji vẽ được; chat bot trống: mô tả + «Bắt đầu»; thanh tin ghim + nhảy tới tin; «Nhắc tôi» → thanh «1 lời nhắc» → danh
-  sách → huỷ; bản đồ OSM + địa chỉ tiếng Việt; iPad chia đôi; gợi ý «/» chèn tin nhắn nhanh; thẻ VietQR. Đạt.
-- Chưa thử: gửi thật ở chat khác (cảm xúc, bỏ phiếu, ghim, vị trí, danh thiếp, ảnh QR — máy chính đang được dùng), bấm «Tham gia»
-  nhóm thật, nút callback của bot, chiều ngang iPad; OTA 1.3.x → 1.4.0 (iPad đang chạy app khác ở màn trước).
-- Bản phát hành 1.4.0: 4 053 136 byte, SHA-256 f325b959…8cae7; ký hiệu iOS 5 / iOS 6: 501, thiếu 0; cài lên iPad 1 khởi động
-  được (nền, VoIP). Nguồn Cydia giữ 1.2.1 / 1.3.0 / 1.4.0; `update-cydia-repo.sh` bỏ dấu cả `Packages` (iconv) — các .deb cũ
-  còn mô tả có dấu (Cydia 1.1.30 hiện «?»).
+Anh hỏi còn thiếu gì cấp thiết (tham khảo Roza), chọn làm lần lượt 11 mục rồi cho phát hành (D31, D32). Lõi: 9 mô-đun mới trong
+`gm-core/src/service/` (links, react, bots, poll, pins, sched, geo, vietqr, contact), 6 phép thử mới (đọc link t.me, hex dữ liệu
+nút bot, VietQR: CRC / cấu trúc mã / ma trận / bỏ dấu) — `cargo test -p gm-core`: 14 / 14.
+
+| # | Tính năng | Đã thử (iPad 1, iOS 5.1.1, bản debug) | Chưa thử |
+| --- | --- | --- | --- |
+| 1 | Link t.me / @tên mở trong app, tham gia nhóm / kênh, `tg://` từ Safari | t.me/<tên> (nhóm cộng đồng → danh sách chủ đề), kênh chưa theo dõi → thanh «Tham gia kênh», chạm @tên trong tin → chat bot, link mời sai mã → «Link mời đã hết hạn hoặc không đúng» | bấm «Tham gia» nhóm thật, link mời thật, `tg://` từ Safari |
+| 2 | Cảm xúc | viên cảm xúc + số gọn (8,8K, 51K), emoji riêng ✨ / sao ⭐, bảng chọn 44 / 73 emoji iOS 5 vẽ được, kênh chỉ cho emoji riêng → không mở bảng | thả / gỡ thật |
+| 3 | Nút / bàn phím bot | chat bot trống: thẻ «Bot này làm được gì?» + «Bắt đầu» | bấm nút callback, bàn phím bot, «Bắt đầu» |
+| 4 | Bình chọn | — (không có bình chọn ở chat xem được) | xem, bỏ / rút phiếu |
+| 5 | Tin ghim | thanh «Tin đã ghim» ở nhóm cộng đồng, chạm → nhảy tới tin | ghim / bỏ ghim |
+| 6 | Nhắc hẹn / hẹn giờ gửi | Tin nhắn đã lưu: «Nhắc tôi» → «Sau 1 giờ» → thanh «🕓 1 lời nhắc» → danh sách «Nhắc lúc 20:25 hôm nay» → huỷ (không để lại tin) | gửi không âm báo, chọn ngày giờ, lời nhắc tới giờ |
+| 7 | Vị trí (OSM) | màn bản đồ (15 ô, ~1,3 giây), địa chỉ tiếng Việt | bản đồ nhỏ trong bong bóng, gửi vị trí, định vị máy |
+| 8 | iPad chia đôi | iOS 5: «Chọn một cuộc trò chuyện», chat bên phải, mở từ link / Tin nhắn đã lưu | chiều ngang, đổi sáng / tối khi đang mở chat |
+| 9 | Tin nhắn nhanh «/» | gõ «/ch» → gợi ý «/chao» → chữ mẫu vào ô nhập (đã xoá mẫu thử) | gợi ý lệnh bot |
+| 10 | VietQR | thẻ QR (ngân hàng, STK, chủ TK, số tiền, nội dung bỏ dấu); mã BIN đối chiếu api.vietqr.io | gửi ảnh QR, quét bằng app ngân hàng |
+| 11 | Danh thiếp | — | thẻ danh thiếp trong bong bóng, gửi danh thiếp |
+
+- Thử trên iPad 1 chỉ xem chat / kênh công khai, gửi chỉ trong Tin nhắn đã lưu (tài khoản trên iPad 1 khác máy chính — không có
+  chat anh chỉ định để thử gửi). Máy chính (iPhone 5) anh đang dùng suốt lúc thử → chưa thử gửi thật; anh cho phát hành trước.
+- Bản phát hành 1.4.0: 4 053 136 byte, SHA-256 `f325b959d2a21d28e90cf5981e2482554988d07478dc8821fc32eb5494cf8ae7`; ký hiệu iOS 5
+  (iPad 1) / iOS 6 (iPad mini 1): 501, thiếu 0; cài lên iPad 1 khởi động được (ở nền, VoIP). Chưa mở được ở màn trước và chưa
+  thử OTA 1.3.x → 1.4.0: cả hai iPad đang có app khác (GramMusic của phiên khác) ở trước.
+- Đã phát hành: GitHub Release v1.4.0 (bản mới nhất — OTA), nguồn Cydia (1.2.1 / 1.3.0 / 1.4.0, mô tả không dấu), trang mô tả,
+  trang giới thiệu, repo công khai 4d5ac33 (thẻ v1.4.0 trỏ vào đây). Tải lại gói từ GitHub và nguồn Cydia: cùng SHA-256.
+- `update-cydia-repo.sh` bỏ dấu cả `Packages` (iconv): các .deb cũ còn mô tả có dấu (Cydia 1.1.30 trên iOS 5 / 6 hiện «?» —
+  e8cbc80), chạy lại script đã làm mô tả cũ có dấu trở lại.
 - Công cụ: `tools-local/ios.sh` khớp đúng cả tên máy (anh thêm «iPhone 5 - đen», đổi máy chính thành «- trắng» — tên cũ khớp
   nhầm phần đầu → trỏ sai máy).
+
+#### Việc tiếp theo
+
+1. Anh cập nhật máy chính lên 1.4.0 (app tự hỏi) rồi dùng thử các mục «Chưa thử» ở bảng trên; hoặc cho em thử gửi trong chat anh
+   chỉ định khi máy rảnh (tin thử xoá cho cả hai bên sau đó).
+2. Thử OTA 1.3.x → 1.4.0 và bản phát hành ở màn trước khi một iPad rảnh.
+3. Còn lại sau 1.4.0: màn tạo bình chọn (lõi đã có `messages.sendPoll`), bình luận kênh, nhiều tài khoản.
+
+### Bản 1.4.1 — nút «Menu» của bot, sửa bảo mật (18/11/2026)
+
+Anh báo chat với bot không bật được menu như Telegram mới, rồi nhờ kiểm tra bảo mật, sửa và phát hành chung (D33).
+
+- Menu bot — thử trên iPhone 5 (bản thử, chat bot điều khiển TV của anh, chỉ xem, không gửi, không đánh dấu đã đọc): nút
+  «Menu» → 9 lệnh của bot; bàn phím bot «luôn hiện» tự bật khi mở chat; chữ gợi ý của bot trong ô nhập; nút có emoji iOS 6
+  thiếu không còn ô vuông; đang gõ thì «Menu» thu thành nút tròn. `bots.keyboard` tìm đúng tin có bàn phím (gọi tay). Mini app:
+  chưa có bot nào để thử.
+- Kiểm tra bảo mật: 26 lỗi (1 nghiêm trọng — `gmupdate` cài được gói tuỳ ý bằng root; 4 cao; 10 trung bình; 11 thấp), sửa 24,
+  còn: ký nguồn Cydia (chưa làm), link mini app nằm trong lịch sử Safari (chỉ hỏi trước). Chi tiết: `vbsec-reports/` (máy anh).
+- Chữ ký OTA thử trên máy thật bằng `gmupdate --verify` (root, không cài): iPad 1 iOS 5.1.1 và iPhone 5 iOS 6 — gói ký đúng →
+  qua; chữ ký ngẫu nhiên / gói sửa 1 byte → mã 72.
+- `cargo test`: gm-core 14 / 14, gm-lottie 3 (thêm `hostile_files`), gm-webm 3 (thêm `hostile_header_no_panic`), gm-opus 2,
+  gm-hevc 4.
+- Phát hành 1.4.1: ký hiệu iOS 5 (iPad 1) / iOS 6 (iPhone 5): 548 (gồm `gmupdate`), thiếu 0; cài gói phát hành lên iPad 1 khởi
+  động được (ở nền — GramMusic của phiên khác đang ở trước). Gói ký bằng `tools/sign-release.sh`, `.sig` đính kèm Release.
+
+#### Việc tiếp theo
+
+1. Thử trọn luồng OTA với `gmupdate` mới (máy thử chạy bản số thấp hơn → cập nhật lên bản có `.sig`) khi có máy rảnh.
+2. Thử trên máy các phần sửa giao diện chưa thử: hỏi trước khi mở link lạ / link ẩn, khoá mật mã + link `tg://`, màn proxy.
+3. Sao lưu `keys/ota-sign.key` ra ngoài máy (mất khoá → máy chạy 1.4.1 phải cập nhật qua Cydia một lần).
+

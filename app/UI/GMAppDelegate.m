@@ -59,6 +59,7 @@ NSString *const GMOpenChatChangedNotification = @"GMOpenChatChanged";
 @implementation GMAppDelegate {
     BOOL _loginShown, _deadShown;
     BOOL _resuming;  // đang từ nền ra trước (willEnterForeground → didBecomeActive) — chạm thông báo
+    NSString *_pendingURL;  // link tg:// tới lúc màn khoá đang hiện — mở sau khi nhập đúng mật mã
 }
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
@@ -74,6 +75,7 @@ NSString *const GMOpenChatChangedNotification = @"GMOpenChatChanged";
     [self.window makeKeyAndVisible];
     [GMBackground shared].list = self.list;
     [GMPasscode lockAtLaunch];  // có mật mã: khoá ngay từ lúc mở
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(unlocked) name:GMPasscodeUnlockedNotification object:nil];
     // Mở app bằng cách chạm thông báo (app đã bị tắt): mở chat đó khi danh sách tải xong
     UILocalNotification *ln = [launchOptions objectForKey:UIApplicationLaunchOptionsLocalNotificationKey];
     if (ln) [self.list openPeer:[ln.userInfo objectForKey:@"peer"]];
@@ -294,8 +296,27 @@ NSString *const GMOpenChatChangedNotification = @"GMOpenChatChanged";
 }
 
 /// Link tg:// từ Safari / app khác (nút «Mở trong Telegram» của trang t.me): mở chat / hỏi tham gia; link proxy → màn Proxy.
+/// Đang khoá bằng mật mã: chưa làm gì (hộp «Tham gia» của link mời nằm trên màn khoá — người cầm máy không biết mật mã vẫn
+/// cho tài khoản vào nhóm được; kiểm bảo mật 17/11/2026) → mở sau khi mở khoá.
 - (BOOL)application:(UIApplication *)application openURL:(NSURL *)url sourceApplication:(NSString *)source annotation:(id)annotation {
     NSString *s = url.absoluteString;
+    if (!s.length) return NO;
+    if ([GMPasscode isLocked]) {
+        GMLog(@"mở link tg:// từ app khác: đợi mở khoá");
+        _pendingURL = s;
+        return YES;
+    }
+    [self openExternalLink:s];
+    return YES;
+}
+
+- (void)unlocked {
+    NSString *s = _pendingURL;
+    _pendingURL = nil;
+    if (s) [self openExternalLink:s];
+}
+
+- (void)openExternalLink:(NSString *)s {
     NSString *low = s.lowercaseString;
     GMLog(@"mở link tg:// từ app khác");
     if ([low hasPrefix:@"tg://proxy"] || [low hasPrefix:@"tg://socks"]) {
@@ -305,7 +326,6 @@ NSString *const GMOpenChatChangedNotification = @"GMOpenChatChanged";
     } else {
         [GMLinks open:s in:self.tabs.view];
     }
-    return YES;
 }
 
 - (void)applicationWillTerminate:(UIApplication *)application {

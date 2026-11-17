@@ -86,6 +86,8 @@ typedef NS_ENUM(NSInteger, GMThemeMode) { GMThemeLight, GMThemeDark, GMThemeAuto
 + (BOOL)emojiRenders:(NSString *)emoji;
 /// Emoji để hiện cho một cảm xúc: chính nó nếu máy vẽ được, không thì emoji gần nghĩa (🥰 → 😍, 🤔 → 😕…), không có thì «•».
 + (NSString *)reactionGlyph:(NSString *)emoji;
+/// Bỏ các emoji máy không vẽ được khỏi chữ (nút của bot: «📸 Màn hình» → «Màn hình» thay vì «☐ Màn hình»).
++ (NSString *)dropMissingEmoji:(NSString *)s;
 /// Nút chữ có nền màu.
 + (UIButton *)button:(NSString *)title;
 /// Thông báo nhỏ hiện giữa dưới màn rồi tự ẩn.

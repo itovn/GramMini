@@ -11,6 +11,8 @@
 extern char **environ;
 
 static NSString *const kHelper = @"/usr/libexec/grammini/gmupdate";
+// Tệp phát hành chỉ tải từ đúng repo (GitHub chuyển tiếp sang máy chủ tệp của nó — lõi chỉ theo link https)
+static NSString *const kAssetPrefix = @"https://github.com/itovn/GramMini/releases/download/";
 static const NSTimeInterval kCheckEvery = 6 * 3600;
 static const NSTimeInterval kSnooze = 24 * 3600;
 
@@ -32,8 +34,11 @@ static UIView *GMTopView(void) {
 }
 
 + (NSString *)apiURL {
+#ifdef DEBUG
+    // Thử OTA (lệnh thử «updateapi»): nguồn khác — bản phát hành không đổi được nguồn
     NSString *o = [[NSUserDefaults standardUserDefaults] stringForKey:@"update.api"];
     if (o.length) return o;
+#endif
     return [[NSBundle mainBundle] objectForInfoDictionaryKey:@"GMUpdateURL"];
 }
 
@@ -49,6 +54,8 @@ static UIView *GMTopView(void) {
 }
 
 + (void)start {
+    // Tệp tải dở / đã cài của lượt trước (gmupdate cài bản chép trong thư mục của root, không xoá tệp ở đây)
+    [[NSFileManager defaultManager] removeItemAtPath:[self updateDir] error:NULL];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self check:NO];
     });
@@ -100,10 +107,15 @@ static UIView *GMTopView(void) {
 + (void)found:(NSDictionary *)rel manual:(BOOL)manual {
     NSString *tag = GMVal(rel, @"tag_name") ?: @"";
     NSString *version = [tag hasPrefix:@"v"] ? [tag substringFromIndex:1] : tag;
-    NSDictionary *asset = nil;
-    for (NSDictionary *a in GMVal(rel, @"assets") ?: @[]) {
+    NSDictionary *asset = nil, *sigAsset = nil;
+    NSArray *assets = GMVal(rel, @"assets");
+    for (NSDictionary *a in [assets isKindOfClass:[NSArray class]] ? assets : @[]) {
         NSString *name = GMVal(a, @"name") ?: @"";
         if ([name hasPrefix:@"vn.grammini.app_"] && [name hasSuffix:@"_iphoneos-arm.deb"]) asset = a;
+    }
+    // Chữ ký của gói (tools/sign-release.sh): <tên gói>.sig — gmupdate chỉ cài gói có chữ ký đúng
+    for (NSDictionary *a in [assets isKindOfClass:[NSArray class]] ? assets : @[]) {
+        if (asset && [GMVal(a, @"name") isEqual:[GMVal(asset, @"name") stringByAppendingString:@".sig"]]) sigAsset = a;
     }
     NSString *cur = [self currentVersion];
     BOOL newer = asset && [self version:version newerThan:cur];
@@ -135,7 +147,7 @@ static UIView *GMTopView(void) {
                                                       forKey:@"update.snooze"];
             return;
         }
-        [self download:asset version:version];
+        [self download:asset sig:sigAsset version:version];
     });
 }
 
@@ -149,10 +161,19 @@ static UIView *GMTopView(void) {
     return stat(kHelper.fileSystemRepresentation, &st) == 0 && st.st_uid == 0 && (st.st_mode & S_ISUID);
 }
 
-+ (void)download:(NSDictionary *)asset version:(NSString *)version {
++ (void)download:(NSDictionary *)asset sig:(NSDictionary *)sigAsset version:(NSString *)version {
     if (gBusy) return;
     if (![self helperReady]) {
         GMAlertShow(@"Không tự cập nhật được", @"Thiếu công cụ cài (gmupdate). Cài bản mới một lần bằng Cydia, các bản sau sẽ tự cập nhật.",
+                    @"OK", nil, nil);
+        return;
+    }
+    NSString *sigURL = GMVal(sigAsset, @"browser_download_url");
+    NSString *debURL = GMVal(asset, @"browser_download_url");
+    if (![sigURL isKindOfClass:[NSString class]] || ![debURL isKindOfClass:[NSString class]] || ![sigURL hasPrefix:kAssetPrefix] ||
+        ![debURL hasPrefix:kAssetPrefix]) {
+        GMLog(@"cập nhật: bản %@ thiếu chữ ký hoặc link tải lạ", version);
+        GMAlertShow(@"Không tự cập nhật được", @"Bản này chưa có chữ ký số. Cập nhật bằng Cydia (nguồn itovn.github.io/GramMini/cydia).",
                     @"OK", nil, nil);
         return;
     }
@@ -164,7 +185,8 @@ static UIView *GMTopView(void) {
     NSString *name = [GMVal(asset, @"name") lastPathComponent];
     // Tên riêng mỗi lượt: lượt đã huỷ (lõi vẫn tải nốt ở nền) không ghi đè tệp của lượt sau
     NSString *path = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@-%lld.deb", [name stringByDeletingPathExtension], GMNowMs()]];
-    NSString *url = GMVal(asset, @"browser_download_url") ?: @"";
+    NSString *sigPath = [path stringByAppendingString:@".sig"];
+    NSString *url = debURL;
     __block BOOL cancelled = NO, finished = NO;
     __block id observer = nil;
     GMBlockAlert *progress = GMAlertShow([NSString stringWithFormat:@"Đang tải bản %@…", version], @"0%", @"Huỷ", nil, ^(NSInteger i) {
@@ -200,7 +222,17 @@ static UIView *GMTopView(void) {
             GMAlertShow(@"Cập nhật không thành công", problem, @"OK", nil, nil);
             return;
         }
-        [self install:path version:version];
+        // Chữ ký (vài trăm byte) — gmupdate kiểm trên bản chép của gói
+        [GMCore call:@"http.download" args:@{@"url": sigURL, @"path": sigPath} done:^(id sok, NSDictionary *serr) {
+            if (serr || [GMVal(sok, @"size") longLongValue] <= 0 || [GMVal(sok, @"size") longLongValue] > 1024) {
+                gBusy = NO;
+                [fm removeItemAtPath:path error:NULL];
+                [fm removeItemAtPath:sigPath error:NULL];
+                GMAlertShow(@"Cập nhật không thành công", @"Không tải được chữ ký của bản cập nhật.", @"OK", nil, nil);
+                return;
+            }
+            [self install:path sig:sigPath version:version];
+        }];
     }];
 }
 
@@ -216,10 +248,11 @@ static UIView *GMTopView(void) {
     return nil;
 }
 
-+ (void)install:(NSString *)path version:(NSString *)version {
++ (void)install:(NSString *)path sig:(NSString *)sigPath version:(NSString *)version {
     [GMCore call:@"app.flush" args:nil done:nil];
     NSString *pid = [NSString stringWithFormat:@"%d", getpid()];
-    char *argv[] = {(char *)kHelper.fileSystemRepresentation, (char *)path.fileSystemRepresentation, (char *)pid.UTF8String, NULL};
+    char *argv[] = {(char *)kHelper.fileSystemRepresentation, (char *)path.fileSystemRepresentation, (char *)pid.UTF8String,
+                    (char *)sigPath.fileSystemRepresentation, NULL};
     pid_t child;
     int rc = posix_spawn(&child, argv[0], NULL, NULL, argv, environ);
     int status = 0;
@@ -228,7 +261,12 @@ static UIView *GMTopView(void) {
     GMLog(@"cập nhật: gmupdate → %d (spawn %d)", code, rc);
     if (code != 0) {
         gBusy = NO;
-        NSString *why = code == 66 ? @"công cụ cài thiếu quyền root" : code == 68 ? @"tệp không phải gói của app" : @"lỗi khi kiểm tệp";
+        [[NSFileManager defaultManager] removeItemAtPath:[self updateDir] error:NULL];
+        NSString *why = code == 66   ? @"công cụ cài thiếu quyền root"
+                        : code == 68 ? @"tệp không phải gói của app"
+                        : code == 72 ? @"chữ ký số không đúng"
+                        : code == 73 ? @"bản này không mới hơn bản đang dùng"
+                                     : @"lỗi khi kiểm tệp";
         GMAlertShow(@"Cập nhật không thành công", [NSString stringWithFormat:@"Không cài được (%@, mã %d).", why, code], @"OK", nil, nil);
         return;
     }

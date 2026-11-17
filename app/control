@@ -1,6 +1,6 @@
 Package: vn.grammini.app
 Name: GramMini
-Version: 1.4.0
+Version: 1.4.1
 Architecture: iphoneos-arm
 Description: Nhan tin Telegram tren iPhone / iPad iOS 5 / iOS 6 (ung dung khong chinh thuc, dung Telegram API). Co MTProxy.
 Maintainer: GramMini

@@ -213,7 +213,15 @@ pub fn file_ext(d: &Document) -> String {
     let from_name = d
         .name()
         .and_then(|n| n.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()))
-        .filter(|e| !e.is_empty() && e.len() <= 8 && e.chars().all(|c| c.is_ascii_alphanumeric()));
+        .filter(|e| !e.is_empty() && e.len() <= 8 && e.chars().all(|c| c.is_ascii_alphanumeric()))
+        // Tệp có thể chạy mã khi xem trước (QuickLook dựng HTML / SVG bằng web view — đọc được tệp khác của app, kể cả phiên):
+        // lưu thành .txt để chỉ hiện chữ (kiểm bảo mật 17/11/2026)
+        .map(|e| match e.as_str() {
+            "html" | "htm" | "xhtml" | "xht" | "shtml" | "svg" | "svgz" | "xml" | "js" | "webarchive" | "mobileconfig" | "plist" => {
+                "txt".to_string()
+            }
+            _ => e,
+        });
     from_name.unwrap_or_else(|| {
         match d.mime_type().unwrap_or("") {
             "video/mp4" => "mp4",
@@ -258,8 +266,16 @@ pub fn to_png(data: &[u8], out: &std::path::Path) -> std::io::Result<()> {
     if data.len() < 12 || &data[..4] != b"RIFF" || &data[8..12] != b"WEBP" {
         return std::fs::write(out, data);
     }
+    // Tệp lạ (kiểm bảo mật 17/11/2026): đầu WebP khai khung 30000×30000 → cấp phát vài GB hỏng → app tắt mỗi lần mở chat.
+    // Sticker thật 512×512.
+    if data.len() > 4 << 20 {
+        return Err(bad("WebP quá lớn".into()));
+    }
     let mut dec = image_webp::WebPDecoder::new(std::io::Cursor::new(data)).map_err(|e| bad(e.to_string()))?;
     let (w, h) = dec.dimensions();
+    if w == 0 || h == 0 || w > 2048 || h > 2048 {
+        return Err(bad("WebP quá lớn".into()));
+    }
     let alpha = dec.has_alpha();
     let mut buf = vec![0u8; dec.output_buffer_size().ok_or_else(|| bad("WebP quá lớn".into()))?];
     dec.read_image(&mut buf).map_err(|e| bad(e.to_string()))?;

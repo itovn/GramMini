@@ -112,12 +112,21 @@ pub extern "C" fn gm_call(request_json: *const c_char, on_result: Callback, ctx:
     });
 }
 
+/// Đọc cả tệp sticker nếu không quá `max` byte (tệp lạ do người khác gửi — xem cỡ trước khi đọc vào bộ nhớ)
+fn read_small(path: *const c_char, max: u64) -> Option<Vec<u8>> {
+    let p = cstr(path);
+    if std::fs::metadata(&p).ok()?.len() > max {
+        return None;
+    }
+    std::fs::read(p).ok()
+}
+
 // ───── Sticker động (TGS): vẽ đồng bộ từng khung, gọi từ luồng nào cũng được (hoạt hình đã đọc thì bất biến) ─────
 
 /// Mở tệp TGS / Lottie → con trỏ hoạt hình (NULL nếu không đọc được). Đóng bằng `gm_lottie_close`.
 #[unsafe(no_mangle)]
 pub extern "C" fn gm_lottie_open(path: *const c_char) -> *mut c_void {
-    match std::fs::read(cstr(path)).ok().and_then(|d| gm_lottie::Animation::parse(&d).ok()) {
+    match read_small(path, 512 << 10).and_then(|d| gm_lottie::Animation::parse(&d).ok()) {
         Some(a) => Box::into_raw(Box::new(a)) as *mut c_void,
         None => std::ptr::null_mut(),
     }
@@ -169,7 +178,7 @@ pub extern "C" fn gm_lottie_close(anim: *mut c_void) {
 /// Mở tệp WebM (VP9, có thể có kênh trong suốt) → con trỏ video (NULL nếu không đọc được). Đóng bằng `gm_webm_close`.
 #[unsafe(no_mangle)]
 pub extern "C" fn gm_webm_open(path: *const c_char) -> *mut c_void {
-    match std::fs::read(cstr(path)).ok().and_then(gm_webm::Video::parse) {
+    match read_small(path, 4 << 20).and_then(gm_webm::Video::parse) {
         Some(v) => Box::into_raw(Box::new(v)) as *mut c_void,
         None => std::ptr::null_mut(),
     }

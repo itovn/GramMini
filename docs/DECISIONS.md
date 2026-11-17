@@ -431,3 +431,36 @@ Thiết kế đầy đủ: [THIET-KE.md](THIET-KE.md).
   Telegram), «Gọi» (máy gọi được), «Chép số». Gửi: đính kèm → «Danh thiếp» → chọn trong danh bạ (người ẩn số → báo).
 - Toast nhiều dòng (câu trả lời của bot dài) — trước đây cắt còn một dòng.
 - Kiểm ký hiệu bản debug: 502 / 502 trên iOS 5 (iPad 1) và iOS 6 (iPad mini 1), thiếu 0.
+
+## D33. Nút «Menu» của bot; kiểm tra bảo mật toàn app, OTA có chữ ký số — 18/11/2026 (bản 1.4.1)
+
+- **Menu bot** (anh: bot điều khiển TV không bật được menu như Telegram mới): nút «Menu» bên trái ô nhập ở chat bot —
+  `bot_info.menu` (`botMenuButtonCommands` / mặc định có lệnh → danh sách lệnh trong khung gợi ý; `botMenuButton` → mini app);
+  đang gõ / bàn phím máy mở thì thu thành nút tròn ba vạch. Bàn phím trả lời của bot: «luôn hiện» (`persistent`) tự hiện khi
+  mở chat, chữ gợi ý của bot thay «Tin nhắn»; bàn phím ở tin cũ hơn trang đã tải → `bots.keyboard` dò lùi tối đa 400 tin (bot
+  gửi bàn phím một lần rồi gửi nhiều tin báo — bản trước mất bàn phím). Emoji iOS 6 không vẽ được bị bỏ khỏi chữ trên nút
+  (`GMTheme dropMissingEmoji`). Mini app (nút Menu / nút dưới tin / phím bàn phím): `bots.webview` (`requestWebView` /
+  `requestSimpleWebView`) lấy link có dữ liệu đăng nhập Telegram → hỏi trước → Safari (iOS 5 / 6 không có khung mini app).
+- **Kiểm tra bảo mật** (skill vbs-scan-security, 4 phần quét song song; báo cáo chi tiết ở `vbsec-reports/` — không lên git):
+  26 lỗi, sửa 24. Mô hình đe doạ: mọi thứ người khác / bot gửi qua Telegram, trả lời từ Internet, link `tg://` do app khác mở,
+  tệp ở thư mục chung mà tiến trình quyền `mobile` ghi được.
+  - **OTA** (`gmupdate`, setuid root): chỉ cài gói có **chữ ký số** của người phát hành — RSA-3072 PKCS#1 v1.5 + SHA-256, khoá
+    công khai gắn trong `app/Helper/ota_cert.h`, khoá riêng `keys/ota-sign.key` chỉ ở máy phát hành, `tools/sign-release.sh` ký,
+    `<gói>.deb.sig` đính kèm GitHub Release. Công cụ chép gói vào `/var/root/GramMini-update` (0700) rồi kiểm và cài bản chép;
+    bỏ môi trường của bên gọi; chỉ GramMini gọi được (tiến trình cha); chỉ cài bản mới hơn; nhật ký trong thư mục root. Kiểm chữ
+    ký bằng Security.framework (chứng chỉ → `SecTrustCopyPublicKey` → `SecKeyRawVerify` với DigestInfo SHA-256 tự ghép — iOS 5
+    không nạp khoá RSA trần) + CommonCrypto; đã thử trên iOS 5.1.1 và iOS 6. App chỉ nhận link tải từ
+    `github.com/itovn/GramMini/releases/download/`; lõi `http.*` chỉ https (cả chuyển hướng), có giới hạn cỡ. Bản 1.4.0 → 1.4.1
+    vẫn đi qua `gmupdate` cũ; từ 1.4.1 trở đi bản nào thiếu `.sig` thì app báo cập nhật qua Cydia.
+  - **Tệp lạ làm tắt / treo app** (sticker tự chạy khi mở chat): TGS ≤ 512 KB, JSON ≤ 2 MB, ≤ 64 điểm màu gradient, ≤ 4000 lượt
+    vẽ lớp mỗi khung; WebM: phần tử vắt qua cuối phần tử cha → bỏ (trước panic); WebP ≤ 2048 × 2048; tin thoại ≤ 15 phút, ≤ 32 MB;
+    H.265: dựng bảng mẫu một lượt. Có phép thử bằng tệp độc dựng lại.
+  - **Link**: chỉ http / https mở thẳng, kiểu khác (`tel:`, `facetime:`…) hỏi kèm nguyên link; link ẩn sau chữ khác hỏi «Mở link
+    này?»; `tg://` không mở được thì báo (trước lặp tự mở mãi); link proxy từ ngoài không tự thử kết nối.
+  - **Mật mã app**: link `tg://` lúc đang khoá hoãn tới khi mở khoá; không đánh dấu đã đọc khi màn khoá che; đếm nhập sai lưu
+    lại, chờ tăng dần (30 giây → 1 giờ).
+  - **Tệp riêng tư**: `session.json`, `settings.json`, `outbox.json` ghi qua tệp tạm tạo mới quyền 0600; tệp `.html` / `.svg`…
+    người khác gửi lưu đệm thành `.txt` (QuickLook không dựng HTML); số ngẫu nhiên lấy từ `/dev/urandom` (arc4random iOS 5 / 6
+    là RC4). Bản thử: tệp lệnh phải do root ghi.
+  - Chưa làm: ký nguồn Cydia (`Release.gpg`); bản đồ tin vị trí vẫn tải thẳng từ OpenStreetMap.
+

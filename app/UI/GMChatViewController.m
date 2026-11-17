@@ -1,4 +1,5 @@
 #import "GMChatViewController.h"
+#import "GMPasscode.h"
 #import "GMCore.h"
 #import "GMImages.h"
 #import "GMPhotoViewController.h"
@@ -392,6 +393,8 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     NSDictionary *_kbdMarkup;        // bàn phím trả lời của bot đang dùng (tin gần nhất có bàn phím)
     UIButton *_kbdBtn;               // nút bật / tắt bàn phím của bot trong ô nhập
     BOOL _kbdOn;
+    NSDictionary *_oldKbd;           // bàn phím bot tìm thấy ở tin cũ hơn trang đã tải (bots.keyboard)
+    BOOL _oldKbdAsked, _kbdAutoShown;
     BOOL _historyLoaded;
     UIView *_botCard;                // chat bot trống: thẻ «Bot này làm được gì?»
     NSMutableDictionary *_pollSel;   // bình chọn nhiều lựa chọn: mã tin → các lựa chọn đã đánh dấu (chưa bấm «Bỏ phiếu»)
@@ -404,6 +407,10 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     NSInteger _schedCount;
     GMSuggestView *_suggest;         // gõ «/»: lệnh của bot + tin nhắn nhanh
     NSArray *_commands;              // lệnh của bot (chat bot / các bot trong nhóm): [{c, d}]
+    NSDictionary *_botMenu;          // nút «Menu» của bot bên trái ô nhập: {k: commands} | {k: web, t, u}
+    UIButton *_menuBtn;
+    BOOL _menuOpen;                  // khung gợi ý đang là danh sách lệnh mở từ nút «Menu»
+    BOOL _menuCompact;               // đang gõ: nút «Menu» thu lại thành biểu tượng
     UIView *_datePanel;              // chọn ngày giờ hẹn gửi
     UIDatePicker *_datePicker;
 }
@@ -579,6 +586,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
     [nc addObserver:self selector:@selector(event:) name:GMCoreEventNotification object:nil];
     [nc addObserver:self selector:@selector(becameActive) name:UIApplicationDidBecomeActiveNotification object:nil];
+    [nc addObserver:self selector:@selector(becameActive) name:GMPasscodeUnlockedNotification object:nil];
     [nc addObserver:self selector:@selector(keyboard:) name:UIKeyboardWillShowNotification object:nil];
     [nc addObserver:self selector:@selector(keyboard:) name:UIKeyboardWillHideNotification object:nil];
     [nc addObserver:self selector:@selector(menuHidden) name:UIMenuControllerDidHideMenuNotification object:nil];
@@ -633,10 +641,14 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     CGFloat panelH = (_compose != GMComposeNormal) ? kPanelH : 0;
     CGFloat y = b.size.height - _kbBottom - barH;
     _bar.frame = CGRectMake(0, y, b.size.width, _barH);
-    _attach.frame = CGRectMake(2, _barH - 46, kAttachW, 44);
-    _inputBox.frame = CGRectMake(kAttachW + 4, 6, b.size.width - kAttachW - 72, _barH - 12);
+    [self updateMenuButton];
+    CGFloat mw = [self menuWidth], lx = mw ? mw + 6 : 0;
+    _menuBtn.frame = CGRectMake(6, _barH - 39, mw, 30);
+    _attach.frame = CGRectMake(2 + lx, _barH - 46, kAttachW, 44);
+    _inputBox.frame = CGRectMake(kAttachW + 4 + lx, 6, b.size.width - kAttachW - 72 - lx, _barH - 12);
     _input.frame = CGRectMake(4, 0, _inputBox.bounds.size.width - (_kbdMarkup ? 68 : 36), _inputBox.bounds.size.height);
     _kbdBtn.hidden = !_kbdMarkup;
+    _placeholder.frame = CGRectMake(13, 0, MAX(40, _input.frame.size.width - 14), kInputMinH);
     _kbdBtn.frame = CGRectMake(_inputBox.bounds.size.width - 66, _inputBox.bounds.size.height - kInputMinH, 32, kInputMinH);
     _botCard.center = CGPointMake(floor(b.size.width / 2), floor((y - panelH) / 2));
     _stickerBtn.frame = CGRectMake(_inputBox.bounds.size.width - 34, _inputBox.bounds.size.height - kInputMinH, 32, kInputMinH);
@@ -749,7 +761,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
 /// nhắn sau đó → không). Có bàn phím mới từ tin mới nhất → tự hiện (thay bàn phím máy).
 - (void)updateBotKeyboard {
     NSDictionary *mk = nil;
-    BOOL sawOut = NO, newest = YES;
+    BOOL sawOut = NO, newest = YES, decided = NO;
     BOOL fromNewest = NO;
     for (NSInteger i = (NSInteger)_msgs.count - 1; i >= 0; i--) {
         NSDictionary *m = [_msgs objectAtIndex:i];
@@ -763,13 +775,21 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
             newest = NO;
             continue;
         }
+        decided = YES;
         if ([GMVal(k, @"hide") boolValue] || ([GMVal(k, @"single") boolValue] && sawOut)) break;
         mk = k;
         fromNewest = newest;
         break;
     }
+    // Trang đã tải không có bàn phím nào: chat bot thì dò tin cũ hơn (bot gửi bàn phím một lần rồi gửi nhiều tin báo)
+    if (!decided) {
+        if (_oldKbd) mk = _oldKbd;
+        else if (!_oldKbdAsked && _msgs.count && [GMVal(_status, @"bot") boolValue]) [self findOldKeyboard:sawOut];
+    }
     if ((mk == nil && _kbdMarkup == nil) || [mk isEqual:_kbdMarkup]) return;
     _kbdMarkup = mk;
+    NSString *ph = GMVal(mk, @"placeholder");
+    _placeholder.text = [ph isKindOfClass:[NSString class]] && ph.length ? [GMTheme dropMissingEmoji:ph] : @"Tin nhắn";
     if (!_kbdBtn) {
         _kbdBtn = [UIButton buttonWithType:UIButtonTypeCustom];
         [_kbdBtn addTarget:self action:@selector(toggleBotKeyboard) forControlEvents:UIControlEventTouchUpInside];
@@ -780,9 +800,28 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
         if (_kbdOn) [self setBotKeyboard:NO];
         return;
     }
+    // Bàn phím «luôn hiện» (persistent): tự hiện một lần khi mở chat, như Telegram
+    BOOL persistent = [GMVal(mk, @"persistent") boolValue] && !_kbdAutoShown && !_input.text.length;
+    BOOL visible = !_bar.hidden && self.navigationController.topViewController == self;
     if (_kbdOn) [self setBotKeyboard:YES];  // bàn phím mới thay bàn phím cũ đang mở
-    else if (fromNewest && !_bar.hidden && self.navigationController.topViewController == self) [self setBotKeyboard:YES];
-    else [_kbdBtn setImage:[GMTheme icon:@"botkeys"] forState:UIControlStateNormal];
+    else if ((fromNewest || persistent) && visible) {
+        _kbdAutoShown = YES;
+        [self setBotKeyboard:YES];
+    } else [_kbdBtn setImage:[GMTheme icon:@"botkeys"] forState:UIControlStateNormal];
+}
+
+/// Dò bàn phím bot ở tin cũ hơn trang đã tải (lõi đọc lùi tối đa 400 tin; mỗi lần mở chat dò một lần).
+- (void)findOldKeyboard:(BOOL)sawOut {
+    _oldKbdAsked = YES;
+    NSDictionary *oldest = [_msgs objectAtIndex:0];
+    [GMCore call:@"bots.keyboard" args:@{@"peer": self.peer, @"before": GMVal(oldest, @"id") ?: @0, @"out": @(sawOut)}
+            done:^(id ok, NSDictionary *err) {
+                NSDictionary *k = GMVal(ok, @"keyboard");
+                GMLog(@"bàn phím bot ở tin cũ: %@", [k isKindOfClass:[NSDictionary class]] ? GMVal(ok, @"id") : (err ? @"lỗi" : @"không có"));
+                if (![k isKindOfClass:[NSDictionary class]]) return;
+                _oldKbd = k;
+                [self updateBotKeyboard];
+            }];
 }
 
 - (void)toggleBotKeyboard {
@@ -829,7 +868,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
             k.titleLabel.font = [UIFont systemFontOfSize:15];
             k.titleLabel.lineBreakMode = GMTailTruncation;
             k.titleEdgeInsets = UIEdgeInsetsMake(0, 4, 0, 4);
-            [k setTitle:GMVal(b, @"t") forState:UIControlStateNormal];
+            [k setTitle:[GMTheme dropMissingEmoji:GMVal(b, @"t")] forState:UIControlStateNormal];
             [k setTitleColor:[GMTheme text] forState:UIControlStateNormal];
             k.tap = ^{ [ws botKey:b]; };
             [k addTarget:k action:@selector(fire) forControlEvents:UIControlEventTouchUpInside];
@@ -855,6 +894,10 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
         [self pickLocation];  // phím «gửi vị trí»: chọn vị trí trên bản đồ rồi gửi
         return;
     }
+    if ([k isEqual:@"web"]) {
+        [self openWebApp:GMVal(b, @"u") bot:nil simple:YES menu:NO];
+        return;
+    }
     if (![k isEqual:@"text"]) {
         [GMTheme toast:@"GramMini chưa gửi được loại phím này." in:self.view];
         return;
@@ -864,6 +907,136 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
         [_input resignFirstResponder];
     }
     [self sendText:GMVal(b, @"t") reply:nil];
+}
+
+#pragma mark Nút «Menu» của bot
+
+static BOOL gDebugNoSafari;
+
+/// Chat với bot có lệnh / mini app: nút «Menu» bên trái ô nhập (như Telegram): có chữ («Menu» / chữ bot đặt), đang gõ thì thu
+/// lại thành biểu tượng ba vạch.
+- (void)setBotMenu:(NSDictionary *)menu {
+    if (![self.kind isEqual:@"user"]) menu = nil;
+    if ((!menu && !_botMenu) || [menu isEqual:_botMenu]) return;
+    _botMenu = menu;
+    if (menu && !_menuBtn) {
+        _menuBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+        _menuBtn.backgroundColor = [GMTheme accent];
+        _menuBtn.layer.cornerRadius = 15;
+        _menuBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+        _menuBtn.titleLabel.lineBreakMode = GMTailTruncation;
+        _menuBtn.titleEdgeInsets = UIEdgeInsetsMake(0, 2, 0, 2);
+        [_menuBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        [_menuBtn setTitleColor:[UIColor colorWithWhite:1 alpha:0.55] forState:UIControlStateHighlighted];
+        [_menuBtn addTarget:self action:@selector(menuTapped) forControlEvents:UIControlEventTouchUpInside];
+        [_bar addSubview:_menuBtn];
+    }
+    _menuBtn.hidden = menu == nil;
+    if (!menu) [self closeBotMenu];
+    if (menu) [self drawMenuButton:[self menuShouldCompact]];
+    [self layoutBars:NO];
+}
+
+/// Thu gọn khi có chữ hoặc đang mở bàn phím máy (như Telegram); bàn phím của bot đang mở thì vẫn đủ chữ.
+- (BOOL)menuShouldCompact {
+    return _input.text.length > 0 || (_kbBottom > 0 && !_kbdOn && !_stickersOpen);
+}
+
+/// Thu gọn / bung nút «Menu» khi cần → YES nếu đổi (bề ngang đổi, cần xếp lại).
+- (BOOL)updateMenuButton {
+    BOOL compact = [self menuShouldCompact];
+    if (!_botMenu || compact == _menuCompact) return NO;
+    [self drawMenuButton:compact];
+    return YES;
+}
+
+- (void)drawMenuButton:(BOOL)compact {
+    _menuCompact = compact;
+    BOOL web = [GMVal(_botMenu, @"k") isEqual:@"web"];
+    NSString *t = compact ? nil : (web ? ([GMTheme dropMissingEmoji:GMVal(_botMenu, @"t")] ?: @"Mở") : @"Menu");
+    [_menuBtn setTitle:t forState:UIControlStateNormal];
+    [_menuBtn setImage:compact ? [GMTheme icon:@"menu" color:[UIColor whiteColor]] : nil forState:UIControlStateNormal];
+}
+
+/// Bề ngang nút «Menu» (0 = không có nút).
+- (CGFloat)menuWidth {
+    if (!_botMenu || !_menuBtn || _menuBtn.hidden) return 0;
+    NSString *t = [_menuBtn titleForState:UIControlStateNormal];
+    if (!t.length) return 34;
+    CGFloat w = ceil([t sizeWithFont:_menuBtn.titleLabel.font].width) + 22;
+    return MAX(34, MIN(w, self.view.bounds.size.width > 400 ? 160 : 96));
+}
+
+- (void)menuTapped {
+    if ([GMVal(_botMenu, @"k") isEqual:@"web"]) {
+        [self openWebApp:GMVal(_botMenu, @"u") bot:nil simple:NO menu:YES];
+        return;
+    }
+    if (_menuOpen) {
+        [self closeBotMenu];
+        return;
+    }
+    NSMutableArray *items = [NSMutableArray array];
+    for (NSDictionary *c in _commands) {
+        NSString *cmd = GMVal(c, @"c");
+        if (cmd.length < 2) continue;
+        [items addObject:@{@"t": cmd, @"d": GMVal(c, @"d") ?: @"", @"kind": @"cmd", @"v": cmd}];
+    }
+    if (!items.count) {
+        [GMTheme toast:@"Bot này chưa có lệnh nào." in:self.view];
+        return;
+    }
+    [self showSuggest:items];
+    _menuOpen = YES;
+}
+
+- (void)closeBotMenu {
+    if (!_menuOpen) return;
+    _menuOpen = NO;
+    _suggest.hidden = YES;
+    [self layoutBars:NO];
+}
+
+/// Mini app của bot: xin Telegram link có dữ liệu đăng nhập rồi mở bằng Safari (iOS 5 / 6 không có khung mini app trong app;
+/// trang viết cho trình duyệt mới có thể không chạy trên Safari cũ). `bot`: bot gửi tin có nút (nhóm) — nil = chat này.
+- (void)openWebApp:(NSString *)url bot:(NSString *)bot simple:(BOOL)simple menu:(BOOL)menu {
+    if (![url isKindOfClass:[NSString class]] || !url.length) return;
+    if (!gDebugNoSafari) {
+        // Hỏi trước: rời app sang Safari; bot nhận tên + ID Telegram; link (có dữ liệu đăng nhập) nằm lại trong lịch sử Safari
+        __weak GMChatViewController *ws = self;
+        GMAlertShow(@"Mở ứng dụng của bot?",
+                    @"Ứng dụng mở bằng Safari và nhận tên, ID Telegram của bạn. Trang viết cho máy mới có thể không chạy trên iOS cũ.",
+                    @"Huỷ", @"Mở", ^(NSInteger i) {
+                        if (i == 1) [ws requestWebApp:url bot:bot simple:simple menu:menu];
+                    });
+        return;
+    }
+    [self requestWebApp:url bot:bot simple:simple menu:menu];
+}
+
+- (void)requestWebApp:(NSString *)url bot:(NSString *)bot simple:(BOOL)simple menu:(BOOL)menu {
+    NSMutableDictionary *a = [@{@"peer": self.peer, @"url": url, @"simple": @(simple), @"menu": @(menu)} mutableCopy];
+    if ([bot isKindOfClass:[NSString class]] && bot.length) [a setObject:bot forKey:@"bot"];
+    [UIApplication sharedApplication].networkActivityIndicatorVisible = YES;
+    [GMCore call:@"bots.webview" args:a done:^(id ok, NSDictionary *err) {
+        [UIApplication sharedApplication].networkActivityIndicatorVisible = NO;
+        NSString *u = GMVal(ok, @"url");
+        GMLog(@"mini app của bot: %@", u.length ? @"có link" : (err ? [err objectForKey:@"code"] : @"không link"));
+        if (![u isKindOfClass:[NSString class]] || !u.length) {
+            [GMTheme toast:err ? GMErrorText(err) : @"Không mở được ứng dụng của bot." in:self.view];
+            return;
+        }
+        if (gDebugNoSafari) return;  // lệnh thử: không rời app
+        [GMLinks openWeb:u];
+    }];
+}
+
+- (void)debugMenu {
+    gDebugNoSafari = YES;
+    GMLog(@"[thử] nút Menu: %@ (%@, %.0f pt), %lu lệnh", _botMenu ? GMVal(_botMenu, @"k") : @"không có",
+          [_menuBtn titleForState:UIControlStateNormal] ?: @"biểu tượng", [self menuWidth], (unsigned long)_commands.count);
+    if (_botMenu) [self menuTapped];
+    if (_menuOpen) GMLog(@"[thử] danh sách lệnh: %lu mục", (unsigned long)_suggest.items.count);
 }
 
 /// Cao thêm cho hàng có nút dưới tin.
@@ -894,8 +1067,8 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
             btn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
             btn.titleLabel.lineBreakMode = GMTailTruncation;
             btn.titleEdgeInsets = UIEdgeInsetsMake(0, 6, 0, 6);
-            NSString *t = GMVal(b, @"t") ?: @"";
-            if ([GMVal(b, @"k") isEqual:@"url"]) t = [t stringByAppendingString:@" ↗"];
+            NSString *t = [GMTheme dropMissingEmoji:GMVal(b, @"t")] ?: @"";
+            if ([GMVal(b, @"k") isEqual:@"url"] || [GMVal(b, @"k") isEqual:@"web"]) t = [t stringByAppendingString:@" ↗"];
             [btn setTitle:t forState:UIControlStateNormal];
             [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
             btn.tap = ^{ [ws inlineButton:b msg:m]; };
@@ -910,6 +1083,8 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     NSString *k = GMVal(b, @"k");
     if ([k isEqual:@"url"]) {
         [GMLinks open:GMVal(b, @"u") in:self.view];
+    } else if ([k isEqual:@"web"]) {
+        [self openWebApp:GMVal(b, @"u") bot:GMVal(m, @"from_id") simple:NO menu:NO];
     } else if ([k isEqual:@"copy"]) {
         [UIPasteboard generalPasteboard].string = GMVal(b, @"c") ?: @"";
         [GMTheme toast:@"Đã sao chép" in:self.view];
@@ -1636,6 +1811,9 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
         _status = ok;
         _allowedReacts = GMVal(ok, @"reactions");
         _commands = GMVal(GMVal(ok, @"bot_info"), @"commands") ?: GMVal(ok, @"commands");
+        NSDictionary *menu = GMVal(GMVal(ok, @"bot_info"), @"menu");
+        [self setBotMenu:[menu isKindOfClass:[NSDictionary class]] ? menu : nil];
+        if (_historyLoaded && [GMVal(ok, @"bot") boolValue]) [self updateBotKeyboard];
         [self checkBotStart];
         // Chưa vào (mở từ link, kết quả tìm): thanh «Tham gia» — nhóm thường đã rời thì không vào lại được (cần link mời)
         BOOL left = [GMVal(ok, @"left") boolValue] && ([self.peer hasPrefix:@"-100"] || self.joinHash);
@@ -1694,6 +1872,8 @@ static BOOL gDebugNoRead;
 /// Đánh dấu đã đọc: cả chat; ở một chủ đề diễn đàn thì chỉ chủ đề đó, tới tin mới nhất đã tải.
 - (void)markRead {
     if (gDebugNoRead) return;
+    // Màn khoá mật mã đang che: chưa ai đọc (mở khoá → `unlocked` đánh dấu lại)
+    if ([GMPasscode isLocked]) return;
     if (!self.topic) {
         [GMCore call:@"messages.read" args:@{@"peer": self.peer} done:nil];
         return;
@@ -1962,6 +2142,7 @@ static BOOL gDebugNoRead;
 /// Ô nhập bắt đầu bằng «/» (chưa có khoảng trắng): gợi ý lệnh của bot và tin nhắn nhanh khớp; không khớp gì → «+ Thêm tin nhắn
 /// nhanh».
 - (void)updateSuggestions {
+    _menuOpen = NO;  // gõ phím: danh sách lệnh mở từ nút «Menu» đóng lại (hoặc thành gợi ý «/»)
     NSString *t = _input.text;
     NSMutableArray *items = [NSMutableArray array];
     BOOL slash = [t hasPrefix:@"/"] && _compose != GMComposeEdit &&
@@ -1986,11 +2167,16 @@ static BOOL gDebugNoRead;
         }
     }
     if (!items.count) {
-        if (!_suggest.hidden) {
+        if (_suggest && !_suggest.hidden) {
             _suggest.hidden = YES;
+            [self layoutBars:NO];
         }
         return;
     }
+    [self showSuggest:items];
+}
+
+- (void)showSuggest:(NSArray *)items {
     if (!_suggest) {
         _suggest = [[GMSuggestView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 44)];
         __weak GMChatViewController *ws = self;
@@ -2006,8 +2192,12 @@ static BOOL gDebugNoRead;
 - (void)suggestPicked:(NSDictionary *)it {
     NSString *kind = GMVal(it, @"kind"), *v = GMVal(it, @"v") ?: @"";
     if ([kind isEqual:@"cmd"]) {
-        _input.text = @"";
-        [self textViewDidChange:_input];
+        if (_menuOpen) {
+            [self closeBotMenu];  // từ nút «Menu»: giữ nguyên chữ đang soạn
+        } else {
+            _input.text = @"";
+            [self textViewDidChange:_input];
+        }
         [self sendText:v reply:nil];
     } else if ([kind isEqual:@"quick"]) {
         _input.text = v;
@@ -2039,7 +2229,8 @@ static BOOL gDebugNoRead;
     CGFloat h = MIN(kInputMaxH, MAX(kInputMinH, content));
     tv.scrollEnabled = content > kInputMaxH;
     CGFloat barH = h + 12;
-    if (barH != _barH) {
+    BOOL menuChanged = [self updateMenuButton];
+    if (barH != _barH || menuChanged) {
         _barH = barH;
         [UIView animateWithDuration:0.15 animations:^{ [self layoutBars:YES]; }];
     }
@@ -3225,7 +3416,17 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     }
     NSArray *web = [self openableLinksOf:m];
     if (web.count == 1) {
-        [GMLinks open:web.firstObject in:self.view];
+        NSString *link = web.firstObject, *text = GMVal(m, @"text");
+        if (![text isKindOfClass:[NSString class]] || [text rangeOfString:link options:NSCaseInsensitiveSearch].location == NSNotFound) {
+            // Link ẩn sau chữ khác (chữ ghi «telegram.org» mà link thật đi chỗ khác): hiện link thật trước khi mở, như Telegram
+            // (kiểm bảo mật 17/11/2026)
+            __weak GMChatViewController *ws = self;
+            GMAlertShow(@"Mở link này?", link, @"Huỷ", @"Mở", ^(NSInteger i) {
+                if (i == 1 && ws) [GMLinks open:link in:ws.view];
+            });
+            return;
+        }
+        [GMLinks open:link in:self.view];
     } else if (web.count > 1) {
         UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:@"Mở link" delegate:self cancelButtonTitle:nil
                                              destructiveButtonTitle:nil otherButtonTitles:nil];

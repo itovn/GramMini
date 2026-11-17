@@ -185,9 +185,18 @@ fn sample_table(stbl: &[u8]) -> Option<Vec<Sample>> {
         (0..(be32(stsc, 4)? as usize).min(MAX_SAMPLES)).map(|i| Some((be32(stsc, 8 + i * 12)?, be32(stsc, 12 + i * 12)?))).collect::<Option<_>>()?;
     let mut out = Vec::with_capacity(n);
     let mut s = 0usize;
+    // Các đoạn stsc xếp theo khúc đầu tăng dần → đi một lượt (bản trước dò lại cả danh sách cho từng khúc: tệp lạ 500k khúc ×
+    // 500k đoạn treo luồng chuyển mã hàng phút — kiểm bảo mật 17/11/2026)
+    let (mut ri, mut per) = (0usize, 0u32);
     for (ci, &base) in chunks.iter().enumerate() {
+        if s >= n {
+            break;
+        }
         let chunk_no = ci as u32 + 1;
-        let per = runs.iter().rev().find(|(first, _)| *first <= chunk_no).map(|r| r.1).unwrap_or(0);
+        while ri < runs.len() && runs[ri].0 <= chunk_no {
+            per = runs[ri].1;
+            ri += 1;
+        }
         let mut off = base;
         for _ in 0..per {
             if s >= n {

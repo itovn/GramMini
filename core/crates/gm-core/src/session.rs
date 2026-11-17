@@ -80,14 +80,7 @@ impl FileSession {
             peers: st.peers.values().cloned().collect(),
         };
         let bytes = serde_json::to_vec(&snap).map_err(io::Error::other)?;
-        let tmp = self.path.with_extension("tmp");
-        std::fs::write(&tmp, bytes)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
-        }
-        std::fs::rename(&tmp, &self.path)
+        write_private(&self.path, "tmp", &bytes)
     }
 
     /// Đổi trạng thái; `now` = ghi tệp ngay.
@@ -165,4 +158,24 @@ impl Session for FileSession {
             Ok(())
         })
     }
+}
+
+/// Ghi tệp riêng tư kiểu nguyên tử: tệp tạm `<tên>.<tmp_ext>` tạo MỚI với quyền 0600 ngay từ đầu (O_EXCL — không theo liên kết
+/// tượng trưng có sẵn, không có lúc nào người khác đọc được) → đổi tên đè tệp thật. Dùng cho phiên (khoá đăng nhập), cài đặt
+/// (mật khẩu proxy), hàng chờ gửi (chữ tin nhắn) — kiểm bảo mật 17/11/2026.
+pub fn write_private(path: &std::path::Path, tmp_ext: &str, bytes: &[u8]) -> io::Result<()> {
+    use std::io::Write;
+    let tmp = path.with_extension(tmp_ext);
+    let _ = std::fs::remove_file(&tmp);
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+    }
+    let mut f = o.open(&tmp)?;
+    f.write_all(bytes)?;
+    drop(f);
+    std::fs::rename(&tmp, path)
 }

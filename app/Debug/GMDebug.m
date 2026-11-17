@@ -1,3 +1,4 @@
+#include <sys/stat.h>
 #import "GMDebug.h"
 #import "GMAppDelegate.h"
 #import "GMChatListViewController.h"
@@ -50,6 +51,12 @@ static UIActionSheet *GMFindSheet(UIView *v) {
 }
 
 + (void)tick {
+    struct stat st;
+    if (lstat(kCmdFile.fileSystemRepresentation, &st) != 0) return;
+    if (!S_ISREG(st.st_mode) || st.st_uid != 0) {
+        [[NSFileManager defaultManager] removeItemAtPath:kCmdFile error:NULL];
+        return;
+    }
     NSString *s = [NSString stringWithContentsOfFile:kCmdFile encoding:NSUTF8StringEncoding error:NULL];
     if (!s) return;
     [[NSFileManager defaultManager] removeItemAtPath:kCmdFile error:NULL];
@@ -237,6 +244,9 @@ static void GMFindText(UIView *v, NSString *text) {
         if (s2.location != NSNotFound) [GMQuickReplies save:[arg substringToIndex:s2.location] text:[arg substringFromIndex:s2.location + 1]];
     } else if ([cmd isEqual:@"quickdel"]) {
         [GMQuickReplies remove:arg];
+    } else if ([cmd isEqual:@"botmenu"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // botmenu — chạm nút «Menu» của bot (danh sách lệnh / xin link mini app — không mở Safari)
+        [(GMChatViewController *)top debugMenu];
     } else if ([cmd isEqual:@"suggest"] && [top isKindOfClass:[GMChatViewController class]]) {
         [(GMChatViewController *)top debugSuggest:arg.integerValue];
     } else if ([cmd isEqual:@"sendgeo"] && [top isKindOfClass:[GMChatViewController class]]) {

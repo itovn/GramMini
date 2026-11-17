@@ -70,7 +70,8 @@
     _status = [self label:CGRectMake(20, 256, w - 40, 90) size:15];
     if (self.initialLink.length) {
         _link.text = self.initialLink;
-        [self test];
+        // Không tự thử kết nối: link do người khác đưa (trang web, tin nhắn) — tự nối tới máy chủ của họ là lộ IP / dò mạng
+        // nội bộ (kiểm bảo mật 17/11/2026). Người dùng xem máy chủ rồi bấm «Thử kết nối».
         return;
     }
     [GMCore call:@"proxy.get" args:nil done:^(id ok, NSDictionary *err) {

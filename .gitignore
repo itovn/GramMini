@@ -13,3 +13,7 @@ gm-session*.json
 # Gói IPA Telegram 4.9.2 (tham khảo; có iTunesMetadata.plist = thông tin Apple ID người mua, tệp chạy có bản quyền) — không lên git
 /Tai_Lieu/Telegram_Messenger_4.9.2/
 /Tai_Lieu/*.ipa
+
+# Báo cáo quét bảo mật (vbs-scan-security) — có chi tiết lỗ hổng, không đưa lên repo công khai
+vbsec-reports/
+.vbsec-tmp/

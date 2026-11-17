@@ -35,11 +35,25 @@
     return NO;
 }
 
+/// Chỉ http / https mở thẳng (Safari). Kiểu khác (tel:, facetime:, sms:, cydia:, itms-services:…) — link trong tin do người
+/// khác đặt, iOS 5 / 6 gọi điện ngay không hỏi — phải hỏi trước và hiện nguyên link. tg:// không mở lại (app tự nhận link tg://
+/// của chính mình → lặp mãi). Kiểm bảo mật 17/11/2026.
 + (void)openWeb:(NSString *)link {
-    NSString *l = link;
-    if ([l rangeOfString:@"://"].location == NSNotFound) l = [@"http://" stringByAppendingString:l];
+    NSString *l = [link stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([l rangeOfString:@"://"].location == NSNotFound && ![l.lowercaseString hasPrefix:@"mailto:"]) l = [@"http://" stringByAppendingString:l];
     NSURL *u = [NSURL URLWithString:l];
-    if (u) [[UIApplication sharedApplication] openURL:u];
+    NSString *scheme = u.scheme.lowercaseString;
+    if (!u || !scheme.length || [scheme isEqual:@"tg"]) {
+        GMLog(@"link không mở được (%@)", scheme ?: @"?");
+        return;
+    }
+    if ([scheme isEqual:@"http"] || [scheme isEqual:@"https"]) {
+        [[UIApplication sharedApplication] openURL:u];
+        return;
+    }
+    GMAlertShow(@"Mở link này?", l, @"Huỷ", @"Mở", ^(NSInteger i) {
+        if (i == 1) [[UIApplication sharedApplication] openURL:u];
+    });
 }
 
 + (GMChatListViewController *)list {
@@ -48,6 +62,10 @@
 
 + (void)open:(NSString *)link in:(UIView *)view {
     if (![self isTelegramLink:link]) {
+        if ([link.lowercaseString hasPrefix:@"tg://"]) {
+            [GMTheme toast:@"GramMini chưa mở được link này." in:view];
+            return;
+        }
         [self openWeb:link];
         return;
     }
@@ -64,6 +82,8 @@
             [[self list] openChat:GMVal(ok, @"peer") jumpTo:GMVal(ok, @"msg")];
         } else if ([type isEqual:@"invite"]) {
             [self askJoin:ok in:view];
+        } else if ([link.lowercaseString hasPrefix:@"tg://"]) {
+            [GMTheme toast:@"GramMini chưa mở được link này." in:view];
         } else {
             [self openWeb:link];
         }

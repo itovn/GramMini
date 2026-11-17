@@ -1046,6 +1046,14 @@ static NSDateComponents *GMDay(NSDate *d) {
                 for (int k = 0; k < 5; k++) CGContextFillRect(ctx, CGRectMake(5 + k * 3.6, 9.5 + r * 3.3, 2.2, 2));
             }
             CGContextFillRect(ctx, CGRectMake(8, 16.4, 10, 2));
+        } else if ([name isEqual:@"menu"]) {
+            // Nút «Menu» của bot: ba vạch ngang
+            CGContextSetLineWidth(ctx, 2);
+            for (int i = 0; i < 3; i++) {
+                CGContextMoveToPoint(ctx, 7, 8 + i * 5);
+                CGContextAddLineToPoint(ctx, 19, 8 + i * 5);
+            }
+            CGContextStrokePath(ctx);
         } else if ([name isEqual:@"botkeys"]) {
             // Bàn phím của bot: bốn ô vuông bo
             CGContextSetLineWidth(ctx, 1.6);
@@ -1415,6 +1423,31 @@ static NSString *GMGrouped(long long n) {
     }
     [cache setObject:@(ok) forKey:emoji];
     return ok;
+}
+
++ (NSString *)dropMissingEmoji:(NSString *)s {
+    if (![s isKindOfClass:[NSString class]] || !s.length) return s;
+    // Nhanh: không có ký tự ngoài BMP (emoji mới đều ở đó) → giữ nguyên
+    BOOL astral = NO;
+    for (NSUInteger i = 0; i < s.length && !astral; i++) astral = CFStringIsSurrogateHighCharacter([s characterAtIndex:i]);
+    if (!astral) return s;
+    NSMutableString *out = [NSMutableString stringWithCapacity:s.length];
+    __block BOOL dropSpace = NO;
+    [s enumerateSubstringsInRange:NSMakeRange(0, s.length) options:NSStringEnumerationByComposedCharacterSequences
+                       usingBlock:^(NSString *sub, NSRange r, NSRange er, BOOL *stop) {
+        if (dropSpace && [sub isEqual:@" "]) {
+            dropSpace = NO;
+            return;
+        }
+        dropSpace = NO;
+        if (CFStringIsSurrogateHighCharacter([sub characterAtIndex:0]) && ![self emojiRenders:sub]) {
+            dropSpace = YES;
+            return;
+        }
+        [out appendString:sub];
+    }];
+    NSString *t = [out stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    return t.length ? t : s;
 }
 
 + (NSString *)reactionGlyph:(NSString *)emoji {

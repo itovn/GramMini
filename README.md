@@ -22,7 +22,7 @@ iOS 5.0 – 6.1.x, đã jailbreak (cần MobileSubstrate): iPhone 4 / 4S / 5, iP
 - Nhóm có chủ đề (forum): danh sách chủ đề, xem / gửi theo từng chủ đề, hoặc xem tất cả như nhóm thường.
 - Link t.me / @tên mở ngay trong app (chat, kênh, nhảy tới tin), link mời → «Tham gia»; nhóm / kênh chưa vào có nút «Tham gia».
 - Thả cảm xúc (emoji máy cũ không vẽ được thì hiện emoji gần nghĩa), bình chọn / câu đố (bỏ / rút phiếu), thanh tin ghim, ghim
-  tin; nút bấm và bàn phím của bot, «Bắt đầu» với bot mới.
+  tin; nút bấm, bàn phím và nút «Menu» của bot, «Bắt đầu» với bot mới.
 - Nhắc hẹn / hẹn giờ gửi (nhấn giữ «Gửi»), tin nhắn nhanh (gõ «/»), vị trí trên bản đồ OpenStreetMap (xem và gửi), mã QR
   chuyển khoản VietQR, danh thiếp.
 - iPad: màn chia đôi — danh sách bên trái, cuộc trò chuyện bên phải.

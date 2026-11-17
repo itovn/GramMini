@@ -354,7 +354,7 @@ impl Core {
         // Hẹn giờ (Unix giây): máy chủ giữ tin, tới giờ mới gửi (Tin nhắn đã lưu: thành lời nhắc)
         let schedule = a.get("schedule").and_then(Value::as_i64);
         if let Some(t) = schedule {
-            msg = msg.schedule_date(Some(std::time::UNIX_EPOCH + Duration::from_secs(t.max(0) as u64)));
+            msg = msg.schedule_date(Some(std::time::UNIX_EPOCH + Duration::from_secs(t.clamp(0, i32::MAX as i64) as u64)));
         }
         let m = tokio::time::timeout(Duration::from_secs(20), self.client.send_message(peer, msg))
             .await
@@ -386,8 +386,7 @@ impl Core {
 
     fn save_outbox(&self) {
         let v = Value::Array(lock(&self.outbox).clone());
-        let tmp = self.cfg.data_dir.join("outbox.json.part");
-        if let Err(e) = std::fs::write(&tmp, v.to_string()).and_then(|_| std::fs::rename(&tmp, self.cfg.data_dir.join("outbox.json"))) {
+        if let Err(e) = crate::session::write_private(&self.cfg.data_dir.join("outbox.json"), "json.part", v.to_string().as_bytes()) {
             self.log(&format!("ghi hàng chờ: {e}"));
         }
     }
@@ -872,15 +871,28 @@ impl Core {
         use sha2::Digest;
         use std::io::Write;
         static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+        // Chỉ HTTPS, chuyển hướng cũng phải HTTPS (GitHub chuyển tệp phát hành sang máy chủ tệp của nó) — kiểm bảo mật 17/11/2026
         let client = CLIENT.get_or_init(|| {
             reqwest::Client::builder()
                 .user_agent(concat!("GramMini/", env!("CARGO_PKG_VERSION")))
                 .connect_timeout(Duration::from_secs(20))
+                .redirect(reqwest::redirect::Policy::custom(|at| {
+                    if at.url().scheme() != "https" {
+                        at.error("chuyển hướng sang link không phải https")
+                    } else if at.previous().len() > 5 {
+                        at.stop()
+                    } else {
+                        at.follow()
+                    }
+                }))
                 .build()
                 .unwrap_or_default()
         });
         let net = |e: reqwest::Error| CoreError::new("NETWORK", format!("Không tải được: {e}"));
         let url = arg_str(a, "url")?.to_string();
+        if !url.starts_with("https://") {
+            return Err(CoreError::new("BAD_ARGS", "chỉ tải được link https"));
+        }
         let mut req = client.get(&url);
         if let Some(h) = a.get("headers").and_then(Value::as_object) {
             for (k, v) in h {
@@ -890,10 +902,16 @@ impl Core {
             }
         }
         if method == "http.get" {
-            let resp = req.timeout(Duration::from_secs(40)).send().await.map_err(net)?;
+            let mut resp = req.timeout(Duration::from_secs(40)).send().await.map_err(net)?;
             let code = resp.status().as_u16();
-            let text = resp.text().await.map_err(net)?;
-            return Ok(json!({"code": code, "text": text}));
+            let mut body = Vec::new();
+            while let Some(c) = resp.chunk().await.map_err(net)? {
+                body.extend_from_slice(&c);
+                if body.len() > MAX_HTTP_TEXT {
+                    return Err(CoreError::new("HTTP", "Trả lời quá lớn."));
+                }
+            }
+            return Ok(json!({"code": code, "text": String::from_utf8_lossy(&body)}));
         }
         let path = std::path::PathBuf::from(arg_str(a, "path")?);
         let mut resp = req.send().await.map_err(net)?;
@@ -902,8 +920,22 @@ impl Core {
         }
         let total = resp.content_length().unwrap_or(0);
         let io = |e: std::io::Error| CoreError::new("IO", e.to_string());
+        if total > MAX_HTTP_DOWNLOAD {
+            return Err(CoreError::new("HTTP", "Tệp quá lớn."));
+        }
+        // Tệp tạm tạo mới, chỉ app đọc ghi (không theo liên kết tượng trưng có sẵn ở tên đoán trước được)
         let tmp = path.with_extension("part");
-        let mut f = std::fs::File::create(&tmp).map_err(io)?;
+        let _ = std::fs::remove_file(&tmp);
+        let mut f = {
+            let mut o = std::fs::OpenOptions::new();
+            o.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                o.mode(0o600);
+            }
+            o.open(&tmp).map_err(io)?
+        };
         let mut hasher = sha2::Sha256::new();
         let (mut done, mut last) = (0u64, Instant::now());
         loop {
@@ -915,6 +947,11 @@ impl Core {
             f.write_all(&chunk).map_err(io)?;
             hasher.update(&chunk);
             done += chunk.len() as u64;
+            if done > MAX_HTTP_DOWNLOAD {
+                drop(f);
+                let _ = std::fs::remove_file(&tmp);
+                return Err(CoreError::new("HTTP", "Tệp quá lớn."));
+            }
             if last.elapsed() > Duration::from_millis(300) {
                 (self.emit)(json!({"e": "http.progress", "url": url, "done": done, "total": total}));
                 last = Instant::now();
@@ -1221,9 +1258,7 @@ impl Core {
         for (k, v) in kv {
             m.insert(k.to_string(), v.clone());
         }
-        let tmp = self.cfg.data_dir.join("settings.json.part");
-        std::fs::write(&tmp, Value::Object(m).to_string())
-            .and_then(|_| std::fs::rename(&tmp, self.cfg.data_dir.join("settings.json")))
+        crate::session::write_private(&self.cfg.data_dir.join("settings.json"), "json.part", Value::Object(m).to_string().as_bytes())
             .map_err(|e| CoreError::new("IO", format!("ghi cài đặt: {e}")))
     }
 
@@ -1775,7 +1810,7 @@ impl Core {
                     msg = msg.attribute(grammers_client::media::Attribute::Video {
                         round_message: false,
                         supports_streaming: true,
-                        duration: Duration::from_secs_f64(v.get("duration").and_then(Value::as_f64).unwrap_or(0.0)),
+                        duration: Duration::try_from_secs_f64(v.get("duration").and_then(Value::as_f64).unwrap_or(0.0)).unwrap_or_default(),
                         w: v.get("w").and_then(Value::as_i64).unwrap_or(0) as i32,
                         h: v.get("h").and_then(Value::as_i64).unwrap_or(0) as i32,
                     });
@@ -1799,6 +1834,10 @@ impl Core {
                     return Err(CoreError::new("NO_MEDIA", "Tin này không còn tin thoại."));
                 };
                 let loc = crate::media::document_loc(&d).ok_or_else(|| CoreError::new("NO_MEDIA", "Tin thoại không tải được."))?;
+                // Tệp lạ: tin thoại thật cỡ vài MB (gm_opus còn giới hạn thời lượng khi giải mã)
+                if d.size() > Some(32 << 20) {
+                    return Err(CoreError::new("DECODE", "Tin thoại quá lớn."));
+                }
                 let ogg = path.with_extension("ogg");
                 self.download(&loc, &ogg).await?;
                 let data = std::fs::read(&ogg).map_err(|e| CoreError::new("IO", e.to_string()))?;
@@ -1977,6 +2016,8 @@ impl Core {
             "messages.react" => Box::pin(self.react(a)).await,
             "reactions.available" => Box::pin(self.reactions_available()).await,
             "messages.botCallback" => Box::pin(self.bot_callback(a)).await,
+            "bots.webview" => Box::pin(self.bot_webview(a)).await,
+            "bots.keyboard" => Box::pin(self.bot_keyboard(a)).await,
             "messages.vote" => Box::pin(self.vote(a)).await,
             "messages.sendPoll" => Box::pin(self.send_poll(a)).await,
             "messages.pinned" => Box::pin(self.pinned_list(a)).await,
@@ -2925,3 +2966,7 @@ mod tests {
         assert_eq!(proxy_link(&links[..1]), None);
     }
 }
+
+/// Giới hạn `http.get` (danh sách bản phát hành GitHub cỡ vài chục KB) và `http.download` (gói .deb cỡ vài MB)
+const MAX_HTTP_TEXT: usize = 2 << 20;
+const MAX_HTTP_DOWNLOAD: u64 = 128 << 20;

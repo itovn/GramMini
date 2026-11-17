@@ -43,7 +43,7 @@ biết (có trong danh sách chat / tin đã tải — access_hash lưu trong ph
 | `messages.typing` | `peer`, `action`: typing \| recording \| voice \| photo \| video \| file \| cancel | `{}` — báo «đang …» |
 | `messages.search` | `q`, `peer`? (không có = mọi chat), `limit` (30) | `[Message + chat_name]` |
 | `messages.media` | `peer`, `kind`: photo (ảnh + video) \| file \| voice \| link \| music, `limit` (60), `offset_id`? | `[Message]` mới → cũ |
-| `chat.status` | `peer` | người: `{kind: user, bot, status: online\|offline\|recently\|week\|month\|hidden, was_online?, expires?, bot_info?: {description, commands: [{c, d}]}}`; nhóm / kênh: `{kind, members, online, left (chưa vào / đã rời), reactions: "all"\|"none"\|[emoji], commands: [{c: "/lệnh", d}]}` |
+| `chat.status` | `peer` | người: `{kind: user, bot, status: online\|offline\|recently\|week\|month\|hidden, was_online?, expires?, bot_info?: {description, commands: [{c, d}], menu: {k: "commands"} | {k: "web", t, u} | null}}`; nhóm / kênh: `{kind, members, online, left (chưa vào / đã rời), reactions: "all"\|"none"\|[emoji], commands: [{c: "/lệnh", d}]}` |
 | `chat.info` | `peer` | `Peer` + `about`, `muted`, `ttl` (giây tin tự xoá, 0 = tắt); người: `blocked`, `common_chats`; nhóm / kênh: `members`, `online`, `can_view_members` |
 | `chat.ttl` | `peer`, `period` (giây; 0 = tắt) | `{ttl}` — tin mới trong chat tự xoá sau `period` (cả hai bên / mọi người); nhóm / kênh cần quyền quản trị; Tin nhắn đã lưu: `PEER_ID_INVALID` |
 | `account.defaultTtl` | `period`? | `{ttl}` — không có `period`: đọc; có: đặt mức tự xoá mặc định cho chat mới |
@@ -109,6 +109,8 @@ biết (có trong danh sách chat / tin đã tải — access_hash lưu trong ph
 | `messages.react` | `peer`, `id`, `emoji`? (không có = gỡ) | `{reactions}` mới của tin (thay cảm xúc cũ của mình) |
 | `reactions.available` | — | `["👍", …]` emoji Telegram cho thả (bỏ loại ngừng dùng / chỉ Premium) |
 | `messages.botCallback` | `peer`, `id`, `data` (hex) | `{message?, alert, url?}` — bấm nút callback dưới tin của bot; bot không trả lời kịp → `{}` |
+| `bots.webview` | `peer`, `url` (http/https), `bot?` (bot gửi tin có nút — trong nhóm), `menu?`, `simple?` (phím trên bàn phím bot) | `{url}` — link mini app có dữ liệu đăng nhập Telegram (`#tgWebAppData`), app mở bằng Safari |
+| `bots.keyboard` | `peer`, `before` (tin cũ nhất app đã tải), `out?` (trang đã tải có tin của mình) | `{id, keyboard}` \| null — bàn phím bot còn hiệu lực ở tin cũ hơn (dò lùi tối đa 400 tin) |
 | `messages.vote` | `peer`, `id`, `options` [mã hex] (rỗng = rút phiếu) | `{poll_id, poll?, results}` |
 | `messages.sendPoll` | `peer`, `q`, `answers` [2–12 chữ], `multi`?, `public`? | `Message` |
 | `messages.pinned` | `peer` | `[Message]` tin đang ghim, mới → cũ (≤ 50) |
@@ -126,8 +128,8 @@ biết (có trong danh sách chat / tin đã tải — access_hash lưu trong ph
 - `DocRef` (sticker / GIF): `{"doc" (chuỗi), "emoji", "mime", "w", "h", "duration", "animated"}` — lõi giữ tài liệu theo mã để gửi lại.
 - `Message` còn có `"scheduled"` (tin hẹn giờ vừa tới giờ), `"silent"`, `"mentioned"`, `"pinned"`, và (null nếu không có):
   - `"reactions"`: `[{e, n, me, custom?, paid?}]` — emoji riêng (Premium) → «✨», sao trả phí → «⭐» (chỉ hiện);
-  - `"buttons"`: nút dưới tin của bot, mảng hàng `[{t, k: url (+u) | cb (+d hex) | copy (+c) | user (+id) | other}]`;
-  - `"keyboard"`: bàn phím trả lời của bot `{rows: [[{t, k: text | phone | geo | other}]], single, placeholder}` hoặc `{hide: true}`;
+  - `"buttons"`: nút dưới tin của bot, mảng hàng `[{t, k: url (+u) | web (+u: mini app) | cb (+d hex) | copy (+c) | user (+id) | other}]`;
+  - `"keyboard"`: bàn phím trả lời của bot `{rows: [[{t, k: text | phone | geo | web (+u) | other}]], single, persistent, placeholder}` hoặc `{hide: true}`;
   - `"poll"`: `{id, q, answers: [{t, o}], closed, multi, quiz, public, results: {total, voters: [{o, n, chosen, correct}], solution, min}}`;
   - `"geo"`: `{lat, lng, title?, address?, live?}`; `"contact"`: `{phone, first, last, user?}`;
   - `"links"` gồm cả @tên trong chữ.

@@ -57,6 +57,7 @@
 - (void)debugSendGeo:(NSString *)arg;
 /// Công cụ thử: chọn mục gợi ý thứ i (khung «/»).
 - (void)debugSuggest:(NSInteger)i;
+- (void)debugMenu;
 /// Công cụ thử: mở màn mã QR chuyển khoản.
 - (void)debugOpenVietQR;
 /// Công cụ thử: gửi danh thiếp «số tên».

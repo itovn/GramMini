@@ -1,5 +1,8 @@
 #import <UIKit/UIKit.h>
 
+/// Màn khoá vừa mở (nhập đúng mật mã) — việc hoãn lúc đang khoá (link tg:// từ app khác, đánh dấu đã đọc) làm tiếp.
+extern NSString *const GMPasscodeUnlockedNotification;
+
 /// Khoá app bằng mật mã 4 số (kiểu Telegram 4.9). Lưu băm SHA-256 + muối trong `<dữ liệu>/passcode.plist` (0600) — không lưu
 /// mật mã. Màn khoá nằm trên một UIWindow riêng (view controller gốc riêng → xoay đúng trên iPad iOS 5 / 6, che cả màn bật lên).
 @interface GMPasscode : NSObject

@@ -2,6 +2,7 @@
 // gọi của Rust vào đây (tệp đối tượng của app được ưu tiên hơn thư viện hệ thống), nên dyld của iOS cũ không phải tìm.
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <mach/mach_time.h>
 #include <math.h>
 #include <stddef.h>
@@ -10,6 +11,7 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <time.h>
+#include <unistd.h>
 
 // Mã đồng hồ của <time.h> iOS 10 (SDK 9.3 chưa có)
 enum {
@@ -113,9 +115,26 @@ int fclonefileat(int srcfd, int dst_dirfd, const char *dst, uint32_t flags) {
     return -1;
 }
 
-// CommonCrypto iOS 8+: số ngẫu nhiên cho HashMap của Rust, rustls… — arc4random_buf có từ iOS 4.3.
+// CommonCrypto iOS 8+: số ngẫu nhiên cho HashMap của Rust, rustls, khoá MTProto… — đọc /dev/urandom (bộ sinh của nhân);
+// arc4random của iOS 5 / 6 là RC4 (thiên lệch đã biết — không nên dùng sinh khoá; kiểm bảo mật 17/11/2026). Không đọc được
+// (không xảy ra trên máy thật) thì mới dùng arc4random_buf.
 int32_t CCRandomGenerateBytes(void *bytes, size_t count) {
-    arc4random_buf(bytes, count);
+    static int fd = -1;
+    if (fd < 0) {
+        int f = open("/dev/urandom", O_RDONLY);
+        if (f >= 0) fcntl(f, F_SETFD, FD_CLOEXEC);
+        if (f >= 0 && !__sync_bool_compare_and_swap(&fd, -1, f)) close(f);
+    }
+    unsigned char *p = bytes;
+    size_t left = count;
+    while (fd >= 0 && left > 0) {
+        ssize_t r = read(fd, p, left);
+        if (r < 0 && errno == EINTR) continue;
+        if (r <= 0) break;
+        p += r;
+        left -= (size_t)r;
+    }
+    if (left > 0) arc4random_buf(p, left);
     return 0;  // kCCSuccess
 }
 

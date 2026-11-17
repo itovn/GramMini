@@ -28,6 +28,9 @@ fi
 DEB="packages/vn.grammini.app_${VERSION}_iphoneos-arm.deb"
 [[ -f "$DEB" ]] || { echo "không thấy $DEB" >&2; ls packages >&2; exit 1; }
 python3 "$ROOT/tools/symlist.py" "$BIN" > "packages/symlist-$VERSION.txt"
+# Công cụ cài OTA (setuid root — Security / CommonCrypto để kiểm chữ ký): ký hiệu cũng phải có trên iOS 5 / 6
+python3 "$ROOT/tools/symlist.py" .theos/_/usr/libexec/grammini/gmupdate >> "packages/symlist-$VERSION.txt"
+sort -u -o "packages/symlist-$VERSION.txt" "packages/symlist-$VERSION.txt"
 ls -la "$DEB"
 sha256sum "$DEB"
 echo "Ký hiệu cần tra: app/packages/symlist-$VERSION.txt (… | ssh root@<máy> cbsymcheck)"
