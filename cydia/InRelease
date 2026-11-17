@@ -1,0 +1,34 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Origin: GramMini
+Label: GramMini
+Suite: stable
+Version: 1.0
+Codename: ios6
+Architectures: iphoneos-arm
+Components: main
+Description: GramMini — Telegram cho iPhone / iPad iOS 5 / iOS 6 đã jailbreak — https://itovn.github.io/GramMini/
+MD5Sum:
+ 509da17b0f889bd26a8f727f7e192b96 2148 Packages
+ 35d30836ccecaa9e9ad519eaf4dbd172 714 Packages.gz
+ 0e041dd2b1975eaced73eafc4f60c2b4 868 Packages.bz2
+SHA256:
+ 07a31cb661cedc92f9ec4b44368184d5ad9e9dfa56f29e897062987908323da7 2148 Packages
+ 82e71abbc3eabeb2db31a0455eba9343a045fdcf477d6dfbe262179d9d64fff5 714 Packages.gz
+ 129324246935a1eab4cd348f4037d88a00f3f8977bb8856f4b561f7afee708dc 868 Packages.bz2
+
+-----BEGIN PGP SIGNATURE-----
+
+iQGzBAEBCAAdFiEEhBotOfjXV/IwQlZk+sIoMrKrxWQFAmr8jjwACgkQ+sIoMrKr
+xWQG3QwAq++58x8TBh4IMI2m+nD7Iwax6hlk5AAsni9G84qyT7LOyykDmhKGdgGh
+T8TcNlnOIduPimNevPfwf09/8fzf7KFuuckIh5v5p4x+/8VXIu1fAG2+gHiLtL4Y
+3mjvd3vQff2/4DlTbUBuJKsBylmMSBloDdfqSRLErY4bN0ogRwXbmzr3rsIQdCN6
+OaKEQZaLgB4nOjjAw8wcdKD5j9e7Dk5RPTCUGitSzZmO6OlGgMmIx9HUDGC/t0Dz
+eFibeAIIAbPTz611C18RPWM+Lp6+tDXUEZszTdoyz9LyaZFJmHGt7c0meQy3chwj
+eh2BSq7vAFfTVrfWh48DH7lQ2U3aq+7mLktY4s45UPYq8+6ziGPY5udi4eF2CYla
+lJeZNFE2ArP8MFlTgPdYkAah8Q/NIWJRRFMNYwoyr8CTNtCQwcRyzjb0RdFA92eg
+jpDTYGOBgE9EW2bAV8xhjmJxVN6ecfrGg9Iu1I/hlBKnFVRiDThWj156Y9p1JJGR
+zn8mBeX1
+=Cibz
+-----END PGP SIGNATURE-----
