@@ -383,4 +383,21 @@ Anh bảo sửa nốt phần bản đồ tin vị trí tải thẳng từ OpenSt
 - Sự cố khi thử: lệnh thử `delmsg` đếm từ 0 — «delmsg 1» xoá nhầm tin thứ hai từ dưới lên trong Tin nhắn đã lưu của iPad 1: ảnh
   thử `gm-test.jpg` (logo GramMini) em gửi lúc thử gửi ảnh 16/11 19:09 (cùng ảnh, cùng giờ — không phải tin của anh). Rồi
   «delmsg 0» xoá tin vị trí thử.
+- Đã phát hành: GitHub Release v1.4.3 (gói 4 083 372 byte, SHA-256 `c0895f589d14fe9b68c909fe17a9aa3a93d7a169e0e22991ee781875dc779d59`
+  + `.deb.sig`), nguồn Cydia đã ký (1.4.1 / 1.4.2 / 1.4.3), trang mô tả, trang giới thiệu, repo công khai 3362dd1 (thẻ v1.4.3).
+  Ký hiệu: 552, thiếu 0 trên iPad 1 (iOS 5.1.1) và iPad mini (iOS 6.1.3 — iPhone 5 không kết nối được lúc đó). Bản phát hành cài
+  thẳng lên iPad mini: chạy, `gmupdate --verify` đúng / chữ ký sửa → mã 72. Tải lại: GitHub = Cydia (cùng SHA-256), chữ ký OTA
+  đúng, `gpgv` kiểm `Release.gpg` + `InRelease` đúng; API latest = v1.4.3 kèm `.sig`.
+- **OTA trên iPad 1** (iOS 5.1.1, bản thử 1.4.2-1 → 1.4.3): «Có bản mới 1.4.3» → «Cập nhật» → tải 3 giây → kiểm chữ ký → `dpkg -i`
+  → 0 → respring; «mở lại app → -1» như đã ghi trong `gmupdate.c` (iOS 5 về màn khoá sau respring) — mở khoá / mở app là bản 1.4.3,
+  thư mục tải đã dọn. iPhone 5 của anh vẫn chạy 1.4.2 phát hành — app sẽ tự báo «Có bản mới 1.4.3».
 
+
+### Bản 1.4.4 — biểu tượng mới (19/11/2026)
+
+Anh đưa ảnh khối kính vuông bo góc + máy bay giấy, bảo làm biểu tượng app theo ảnh — D35.
+
+- `tools/icon/make_icon.py` cắt ảnh gốc (`tools/icon/GramMini-src.png`), làm trong suốt góc ngoài, xuất `icon-1024.png` + 8 cỡ
+  trong `app/Resources` (Icon, Icon@2x, Icon-72, Icon-72@2x, Icon-Small, Icon-Small@2x, Icon-Small-50, Icon-Small-50@2x).
+- Đã xem ảnh xuất trên nền tối / sáng: góc trong suốt sạch (không viền đen), máy bay giấy còn rõ ở cỡ 29.
+- Anh bảo phát hành luôn, không thử trên máy (chỉ đổi ảnh, không đổi mã).

@@ -315,7 +315,8 @@ iOS 5 / 6 chưa có background fetch. Push của Telegram lại đi qua chứng 
 ## 10. Bảo mật và điều khoản của Telegram
 
 - **api_id / api_hash riêng**: anh tạo ở <https://my.telegram.org/apps>. Không dùng của app chính thức.
-- Tên và biểu tượng **không giống Telegram**. Tên «GramMini» không chứa chữ Telegram, dùng được. Màn Giới thiệu ghi «ứng dụng
+- Tên và biểu tượng **không giống Telegram**. Tên «GramMini» không chứa chữ Telegram, dùng được. Biểu tượng (D35) không dùng
+  logo chính thức (máy bay trắng trên đĩa tròn xanh) — máy bay giấy kính trên khối vuông bo góc, anh chọn. Màn Giới thiệu ghi «ứng dụng
   không chính thức, dùng Telegram API».
 - **Thử bằng tài khoản phụ** trước: Telegram đôi khi hạn chế lần đăng nhập mới từ client không chính thức. Khai đúng
   `device_model` / `system_version`, và tôn trọng `FLOOD_WAIT`.

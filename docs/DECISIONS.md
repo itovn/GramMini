@@ -469,7 +469,9 @@ Thiết kế đầy đủ: [THIET-KE.md](THIET-KE.md).
     đi kèm gói: `/etc/apt/trusted.gpg.d/vn.grammini.gpg` (cách các nguồn BigBoss / ModMyi / Saurik vẫn làm) và ở
     `cydia/vn.grammini.gpg`. Thử trên iPhone 5 bằng apt của máy (danh sách / bộ đệm riêng trong /tmp): có khoá → nhận chữ ký,
     không cảnh báo; `Release` bị sửa → `BADSIG`; máy chưa có khoá (chưa lên 1.4.2) → cảnh báo `NO_PUBKEY` (chỉ cảnh báo, Cydia
-    vẫn làm mới và cài được như trước — hết sau khi cập nhật app).
+    vẫn làm mới và cài được như trước — hết sau khi cập nhật app). 18/11: anh hỏi màn «Updating Sources» không tự đóng sau khi
+    thêm nguồn — đó là cách Cydia 1.1.x làm với mọi nguồn (`ProgressController` xong chỉ hiện «Return to Cydia», không tự đóng);
+    dòng `NO_PUBKEY` trên máy chưa cài GramMini vô hại → anh chọn **giữ chữ ký**.
   - **Mini app mở trong app** (`GMWebAppViewController`, UIWebView) thay vì Safari: link có dữ liệu đăng nhập Telegram không
     nằm lại trong lịch sử Safari mà ở sau khoá mật mã; đóng là xoá trang khỏi bộ nhớ. Trong khung chỉ đi http / https; link
     Telegram → đóng khung, mở chat trong app; kiểu khác → hỏi như link thường. Hỏi «Mở ứng dụng của bot?» một lần cho mỗi bot.
@@ -495,3 +497,20 @@ Thiết kế đầy đủ: [THIET-KE.md](THIET-KE.md).
   và `net.state` không đổi trạng thái mạng. `net.state` trước đây còn tự đặt «có mạng» sau khi trả lời «mất mạng» → app nhận
   sự kiện «có mạng» trước câu trả lời «mất mạng» → tiêu đề kẹt «đang kết nối…» (gặp khi thử).
 
+
+## D35. Biểu tượng mới: khối kính vuông bo góc, máy bay giấy — 19/11/2026 (bản 1.4.4)
+
+- Anh đưa ảnh `Tai_Lieu/icon/GramMini.png` (628 × 631, khối kính vuông bo góc ánh cầu vồng, máy bay giấy trong suốt, nền đen) và
+  bảo làm biểu tượng app theo ảnh này → thay biểu tượng tròn chữ G của D23.
+- `tools/icon/make_icon.py` giờ không vẽ mà lấy từ ảnh: bản chép `tools/icon/GramMini-src.png` (Tai_Lieu không lên repo công
+  khai), cắt sát khối kính (điểm sáng > 40; nền ~0–18), phóng lên 1024 (`tools/icon/icon-1024.png`), góc ngoài đường cong làm
+  trong suốt (loang nền từ 4 góc, gọt 1 điểm ảnh mép cho hết viền đen, làm mềm), thu nhỏ ra 8 cỡ iOS 5 / 6; cỡ ≤ 72 làm nét nhẹ
+  để nét máy bay khỏi nhoè. Góc của khối kính tròn hơn mặt nạ bo góc của SpringBoard → phần ngoài trong suốt như D23
+  (`UIPrerenderedIcon` giữ nguyên = có, không vệt bóng). Chạy lại: `python tools/icon/make_icon.py tools/icon/GramMini-src.png app/Resources`.
+- Lưu ý D14 / THIET-KE §10 (không dùng logo / nhận diện của Telegram): máy bay giấy là hình gắn với Telegram. Ảnh này không phải
+  logo chính thức (logo chính thức: máy bay trắng đặc trên đĩa tròn xanh), nhưng người dùng vẫn có thể liên tưởng — anh chọn
+  giữ; màn Giới thiệu và mô tả gói vẫn ghi «ứng dụng không chính thức, dùng Telegram API».
+- Đổi biểu tượng trên máy cần respring (như D23) — postinst đã xoá IconsCache của app; OTA tự respring, Cydia hiện nút
+  «Restart SpringBoard». Mục `Icon:` của gói trỏ `Icon@2x.png` trong app nên Cydia tự đổi theo bản cài. Ảnh của trang (repo
+  GramMini-site: `apple-touch-icon.png` 114, `favicon.png` 32, `img/icon.png` 256, `cydia/CydiaIcon.png` 120) xuất lại từ
+  `icon-1024.png` bằng `make_icon.small`.
