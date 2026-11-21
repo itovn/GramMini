@@ -1424,6 +1424,16 @@ static NSDateComponents *GMDay(NSDate *d) {
             CGContextAddLineToPoint(ctx, ex - 4.2, ey + 0.4);
             CGContextClosePath(ctx);
             CGContextFillPath(ctx);
+        } else if ([name isEqual:@"phone"]) {
+            // Ống nghe (gọi thoại): hai đầu bo nối bằng cung
+            UIBezierPath *p = [UIBezierPath bezierPath];
+            [p moveToPoint:CGPointMake(6, 7.5)];
+            [p addCurveToPoint:CGPointMake(18.5, 20) controlPoint1:CGPointMake(6, 14.5) controlPoint2:CGPointMake(11.5, 20)];
+            p.lineWidth = 3.4;
+            p.lineCapStyle = kCGLineCapRound;
+            [p stroke];
+            [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(3.5, 3.5, 5.5, 6.5) cornerRadius:1.8] fill];
+            [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(16, 17.5, 6.5, 5.5) cornerRadius:1.8] fill];
         } else if ([name isEqual:@"mic"]) {
             UIBezierPath *cap = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(9, 3, 8, 13) cornerRadius:4];
             [cap fill];

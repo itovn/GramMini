@@ -317,3 +317,46 @@ pub extern "C" fn gm_h265_close(video: *mut c_void) {
         drop(unsafe { Box::from_raw(video as *mut gm_hevc::Video) });
     }
 }
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Gọi thoại (G3): cầu âm thanh cho AudioUnit VoiceProcessingIO (48 kHz, 16 bit, đơn kênh). Gọi từ callback thời gian thực —
+// không chặn (bộ đệm bận thì bỏ một lượt). Không có cuộc gọi: push bỏ qua, pull trả im lặng.
+//
+// ```c
+// void gm_voip_push(const int16_t *pcm, int n);   // micro → lõi
+// int  gm_voip_pull(int16_t *out, int n);         // lõi → loa (ghi đủ n mẫu; trả số mẫu có tiếng thật)
+// int  gm_voip_level(void);                       // đỉnh micro 0..32767 của khung vừa mã (vạch mức)
+// ```
+
+/// Callback micro: `n` mẫu 48 kHz.
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_voip_push(pcm: *const i16, n: c_int) {
+    if pcm.is_null() || n <= 0 {
+        return;
+    }
+    if let Some(io) = gm_call::tg::io::current() {
+        io.push(unsafe { std::slice::from_raw_parts(pcm, n as usize) });
+    }
+}
+
+/// Callback loa: ghi đủ `n` mẫu vào `out` (thiếu thì im lặng). Trả số mẫu có tiếng thật.
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_voip_pull(out: *mut i16, n: c_int) -> c_int {
+    if out.is_null() || n <= 0 {
+        return 0;
+    }
+    let buf = unsafe { std::slice::from_raw_parts_mut(out, n as usize) };
+    match gm_call::tg::io::current() {
+        Some(io) => io.pull(buf) as c_int,
+        None => {
+            buf.fill(0);
+            0
+        }
+    }
+}
+
+/// Đỉnh micro (0..32767) của khung vừa mã.
+#[unsafe(no_mangle)]
+pub extern "C" fn gm_voip_level() -> c_int {
+    gm_call::tg::io::current().map(|io| io.mic_level.load(std::sync::atomic::Ordering::Relaxed) as c_int).unwrap_or(0)
+}

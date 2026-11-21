@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 gm-net = { path = "../gm-net" }
 gm-opus = { path = "../gm-opus" }
+gm-call = { path = "../gm-call" }
 grammers-client = { workspace = true, features = ["fs"] }
 grammers-mtsender.workspace = true
 grammers-session = { workspace = true, features = ["serde"] }

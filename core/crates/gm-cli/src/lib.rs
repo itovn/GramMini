@@ -32,7 +32,10 @@ fn usage() -> i32 {
   me                    tài khoản đang đăng nhập
   dialogs [N]           N chat đầu (mặc định 20)
   send <me|@user> <chữ> gửi tin (me = Tin nhắn đã lưu)
-  listen [giây] [catchup]  in tin mới (mặc định 60 giây; catchup = lấy bù tin đã lỡ)"
+  listen [giây] [catchup]  in tin mới (mặc định 60 giây; catchup = lấy bù tin đã lỡ)
+  call <tên> [giây] [thư mục]  gọi thoại thử: gọi đi, in 4 emoji khoá, giữ máy [giây] (mặc định 30) rồi gác
+  answer [chờ] [giây] [thư mục]  gọi thoại thử: chờ cuộc gọi đến [chờ] giây (120), nghe máy, giữ [giây] rồi gác
+  callselftest [giây] [độ phức tạp] [băng thông Hz] [voice|tone|none]  tự kiểm engine gọi thoại (2 engine qua 127.0.0.1), đo CPU"
     );
     2
 }
@@ -81,6 +84,112 @@ pub fn run(args: Vec<String>) -> i32 {
     match rt.block_on(async {
         if cmd == "probe" {
             return probe(cfg, dc).await;
+        }
+        if cmd == "calldump" {
+            // calldump <thư mục> [caller|callee] — giải mã các gói báo hiệu đã ghi bởi `call` (key.bin + sig-*.bin)
+            let [dir, more @ ..] = rest.as_slice() else { return Err("calldump <thư mục> [caller|callee]".into()) };
+            let key: [u8; 256] = std::fs::read(format!("{dir}/key.bin")).map_err(|e| e.to_string())?.try_into()
+                .map_err(|_| "key.bin phải 256 byte".to_string())?;
+            // Gói trong thư mục là của bên kia: mình gọi → bên kia là bên nghe (mặc định)
+            let sender_is_caller = more.first().map(|s| s == "caller").unwrap_or(false);
+            let x = gm_call::crypt::x_for(sender_is_caller, gm_call::crypt::Channel::Signaling);
+            let mut files: Vec<_> = std::fs::read_dir(dir).map_err(|e| e.to_string())?.filter_map(|e| e.ok())
+                .map(|e| e.path()).filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("sig-"))).collect();
+            files.sort();
+            for f in files {
+                let pkt = std::fs::read(&f).map_err(|e| e.to_string())?;
+                let name = f.file_name().unwrap().to_string_lossy().to_string();
+                match gm_call::crypt::decrypt(&key, x, &pkt) {
+                    None => println!("{name}: {} byte — msg_key SAI (x = {x})", pkt.len()),
+                    Some(b) => {
+                        std::fs::write(f.with_extension("dec"), &b).map_err(|e| e.to_string())?;
+                        let hex: String = b.iter().take(24).map(|c| format!("{c:02x}")).collect();
+                        let text: String = b.iter().take(160).map(|&c| if (32..127).contains(&c) { c as char } else { '.' }).collect();
+                        println!("{name}: {} byte → {} byte  {hex}
+    {text}", pkt.len(), b.len());
+                    }
+                }
+            }
+            return Ok(());
+        }
+        if cmd == "opusbench" {
+            // opusbench [giây = 20] [độ phức tạp] [băng thông Hz] — CPU bộ mã / bộ giải Opus của cuộc gọi
+            let secs = rest.first().and_then(|s| s.parse().ok()).unwrap_or(20);
+            let cx = rest.get(1).and_then(|s| s.parse().ok()).unwrap_or(gm_call::tg::audio::DEFAULT_COMPLEXITY);
+            let bw = rest.get(2).and_then(|s| s.parse().ok()).unwrap_or(gm_call::tg::audio::DEFAULT_BANDWIDTH);
+            return account::call::opusbench(secs, cx, bw, rest.get(3).map(String::as_str));
+        }
+        if cmd == "callselftest" {
+            // callselftest [giây] — tự kiểm engine gọi thoại không cần tài khoản (2 engine qua 127.0.0.1), đo CPU
+            // callselftest [giây = 20] [độ phức tạp Opus] [băng thông Hz] [voice|tone = voice] — mặc định = thiết lập cuộc gọi
+            let secs = rest.first().and_then(|s| s.parse().ok()).unwrap_or(20);
+            let cx = rest.get(1).and_then(|s| s.parse().ok()).unwrap_or(gm_call::tg::audio::DEFAULT_COMPLEXITY);
+            let bw = rest.get(2).and_then(|s| s.parse().ok()).unwrap_or(gm_call::tg::audio::DEFAULT_BANDWIDTH);
+            let signal = rest.get(3).map(String::as_str).unwrap_or("voice");
+            return account::call::selftest(secs, cx, bw, signal).await;
+        }
+        if cmd == "opusdump" {
+            // opusdump <opus.bin> [ra.wav] — giải lại các gói Opus đã lưu bởi `call` (u16 độ dài + byte), in TOC / cỡ / đỉnh
+            let [src, more @ ..] = rest.as_slice() else { return Err("opusdump <opus.bin> [ra.wav]".into()) };
+            let data = std::fs::read(src).map_err(|e| e.to_string())?;
+            let mut dec = gm_opus::Decoder::new(48_000, 1).map_err(|e| e.to_string())?;
+            let (mut i, mut k, mut pcm) = (0usize, 0usize, Vec::<i16>::new());
+            let mut tocs = std::collections::BTreeMap::<u8, usize>::new();
+            let mut out = vec![0i16; 5760];
+            while i + 2 <= data.len() {
+                let n = u16::from_be_bytes([data[i], data[i + 1]]) as usize;
+                let Some(p) = data.get(i + 2..i + 2 + n) else { break };
+                i += 2 + n;
+                *tocs.entry(p.first().copied().unwrap_or(0)).or_default() += 1;
+                let r = dec.decode(p, &mut out);
+                let (samples, peak) = match &r {
+                    Ok(s) => (*s, out[..*s].iter().map(|x| x.unsigned_abs()).max().unwrap_or(0)),
+                    Err(_) => (0, 0),
+                };
+                if let Ok(s) = r {
+                    pcm.extend_from_slice(&out[..s]);
+                }
+                if k < 40 || k % 50 == 0 {
+                    let hex: String = p.iter().take(10).map(|c| format!("{c:02x}")).collect();
+                    println!("#{k:4} {n:4} byte toc {:02x} (config {:2}, stereo {}, code {}) → {samples} mẫu, đỉnh {peak}  {hex}",
+                        p.first().copied().unwrap_or(0), p.first().map(|t| t >> 3).unwrap_or(0),
+                        p.first().map(|t| (t >> 2) & 1).unwrap_or(0), p.first().map(|t| t & 3).unwrap_or(0));
+                }
+                k += 1;
+            }
+            println!("{k} gói; TOC: {tocs:02x?}; {:.1} giây; đỉnh {}", pcm.len() as f64 / 48_000.0,
+                pcm.iter().map(|x| x.unsigned_abs()).max().unwrap_or(0));
+            if let Some(dst) = more.first() {
+                std::fs::write(dst, account::call::wav(&pcm, 48_000)).map_err(|e| e.to_string())?;
+                println!("Ghi {dst}");
+            }
+            return Ok(());
+        }
+        if cmd == "callreplay" {
+            // callreplay <thư mục> — đưa lại các gói báo hiệu đã ghi vào Channel (vai bên gọi), giải mã gói trả lời của mình
+            let [dir, ..] = rest.as_slice() else { return Err("callreplay <thư mục>".into()) };
+            let key: [u8; 256] = std::fs::read(format!("{dir}/key.bin")).map_err(|e| e.to_string())?.try_into()
+                .map_err(|_| "key.bin phải 256 byte".to_string())?;
+            let mut ch = gm_call::tg::signaling::Channel::new(gm_call::tg::CallKey(key), true);
+            let x_ours = gm_call::crypt::x_for(true, gm_call::crypt::Channel::Signaling);
+            let hex = |b: &[u8]| b.iter().take(120).map(|c| format!("{c:02x}")).collect::<String>();
+            let mut files: Vec<_> = std::fs::read_dir(dir).map_err(|e| e.to_string())?.filter_map(|e| e.ok())
+                .map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "bin")
+                    && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("sig-"))).collect();
+            files.sort();
+            let now = std::time::Instant::now();
+            for f in files {
+                let pkt = std::fs::read(&f).map_err(|e| e.to_string())?;
+                let (msgs, reply) = ch.receive(&pkt, now);
+                println!("{}: {} tin", f.file_name().unwrap().to_string_lossy(), msgs.len());
+                if let Some(r) = reply {
+                    match gm_call::crypt::decrypt(&key, x_ours, &r) {
+                        Some(p) => println!("   trả lời: {}", hex(&p)),
+                        None => println!("   trả lời: không giải được ({} byte)", r.len()),
+                    }
+                }
+            }
+            return Ok(());
         }
         if cmd == "svc" {
             return svc(&rest).await;
@@ -264,6 +373,16 @@ pub fn run(args: Vec<String>) -> i32 {
                 let catch_up = args.iter().any(|a| a == "catchup");
                 let secs = args.iter().find_map(|a| a.parse().ok()).unwrap_or(60);
                 account::listen(&mut c, secs, catch_up).await
+            }
+            ("call", [who, more @ ..]) => {
+                let hold = more.first().and_then(|s| s.parse().ok()).unwrap_or(30);
+                account::call::call(&mut c, who, hold, more.get(1).map(String::as_str)).await
+            }
+            ("answer", more) if more.len() <= 3 => {
+                // answer [giây chờ = 120] [giây giữ máy = 30] [thư mục ghi]
+                let wait = more.first().and_then(|s| s.parse().ok()).unwrap_or(120);
+                let hold = more.get(1).and_then(|s| s.parse().ok()).unwrap_or(30);
+                account::call::answer(&mut c, wait, hold, more.get(2).map(String::as_str)).await
             }
             _ => Err("lệnh / đối số sai — chạy gm-cli không đối số để xem cách dùng".into()),
         };

@@ -1,3 +1,4 @@
+#import "GMCallManager.h"
 #import "GMAppDelegate.h"
 #import <QuartzCore/QuartzCore.h>
 #import "GMBackground.h"
@@ -89,6 +90,7 @@ NSString *const GMOpenChatChangedNotification = @"GMOpenChatChanged";
         return YES;
     }
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(event:) name:GMCoreEventNotification object:nil];
+    [[GMCallManager shared] attach];  // gọi thoại: sự kiện call.state (G3)
     [self checkAuth];
     [GMUpdate start];  // kiểm bản mới (OTA) sau 10 giây, khi quay lại app tối đa 6 giờ một lần
 #ifdef DEBUG

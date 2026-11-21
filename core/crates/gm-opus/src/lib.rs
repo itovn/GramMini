@@ -27,6 +27,10 @@ unsafe extern "C" {
 
 const OPUS_APPLICATION_VOIP: c_int = 2048;
 const OPUS_SET_BITRATE_REQUEST: c_int = 4002;
+const OPUS_SET_COMPLEXITY_REQUEST: c_int = 4010;
+const OPUS_SET_MAX_BANDWIDTH_REQUEST: c_int = 4004;
+const OPUS_SET_SIGNAL_REQUEST: c_int = 4024;
+const OPUS_SIGNAL_VOICE: c_int = 3001;
 
 fn err(msg: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, msg.into())
@@ -83,6 +87,28 @@ impl Encoder {
         }
         unsafe { opus_encoder_ctl(st, OPUS_SET_BITRATE_REQUEST, bitrate as c_int) };
         Ok(Self { st })
+    }
+
+    /// Độ phức tạp 0..=10 (mặc định của libopus là cao nhất) — gọi thoại dùng 5: đủ cho tiếng nói, nhẹ cho máy A4.
+    pub fn set_complexity(&mut self, c: i32) {
+        unsafe { opus_encoder_ctl(self.st, OPUS_SET_COMPLEXITY_REQUEST, c.clamp(0, 10) as c_int) };
+    }
+
+    /// Báo đây là tiếng nói: Opus dùng SILK / Hybrid, không tự chuyển sang CELT (chế độ nhạc) theo phân tích tín hiệu.
+    pub fn set_signal_voice(&mut self) {
+        unsafe { opus_encoder_ctl(self.st, OPUS_SET_SIGNAL_REQUEST, OPUS_SIGNAL_VOICE) };
+    }
+
+    /// Băng thông tối đa (Hz âm thanh): 4000 hẹp, 6000 vừa, 8000 rộng (chỉ SILK), 12000 siêu rộng, còn lại toàn dải.
+    pub fn set_max_bandwidth(&mut self, hz: u32) {
+        let bw = match hz {
+            0..=4000 => 1101,
+            4001..=6000 => 1102,
+            6001..=8000 => 1103,
+            8001..=12000 => 1104,
+            _ => 1105,
+        };
+        unsafe { opus_encoder_ctl(self.st, OPUS_SET_MAX_BANDWIDTH_REQUEST, bw as c_int) };
     }
 
     /// Mã một khung (vd 20 ms = rate / 50 mẫu) → gói Opus.

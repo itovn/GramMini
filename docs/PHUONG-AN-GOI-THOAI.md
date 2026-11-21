@@ -85,7 +85,7 @@ CPU: Opus (độ phức tạp 5) cộng SRTP cho 50 gói mỗi giây là việc 
 | --- | --- | --- |
 | G0 | Anh chốt có làm không; chuẩn bị tài khoản thứ hai (SIM phụ) đăng nhập Telegram chính thức trên một máy khác | — |
 | G1 | gm-cli (PC, phiên riêng): báo hiệu + trao khoá + 4 emoji, chưa có tiếng. Thử dựng `webrtc-dtls` cho armv7 iOS 6 | 4 emoji trùng với app chính thức |
-| G2 | gm-cli: ICE + DTLS-SRTP + Opus (micro / loa PC) theo V2. Gọi đi và nhận cuộc gọi với Telegram Desktop / Android / iOS. **Mốc quyết định** | Nghe rõ hai chiều ≥ 5 phút, qua Wi-Fi và 4G |
+| G2 | gm-cli: ICE + DTLS-SRTP + Opus (micro / loa PC) theo V2. Gọi đi và nhận cuộc gọi với Telegram Desktop / Android / iOS. **Mốc quyết định** — **XONG 21/11/2026**: gọi đi + gọi đến với iOS 18, emoji trùng, tiếng hai chiều, Wi-Fi / 5G, p2p / chuyển tiếp, 5 phút | Nghe rõ hai chiều ≥ 5 phút, qua Wi-Fi và 4G |
 | G3 | Đưa lên iOS 5 / 6: ký hiệu thiếu = 0, cầu AudioUnit VoiceProcessingIO ↔ lõi, loa trong / ngoài, cảm biến tiệm cận, đo CPU | iPad mini, iPhone 5, iPad 1 |
 | G4 | Giao diện: màn cuộc gọi, nút gọi, mục «Cuộc gọi» + lịch sử, đánh giá cuộc gọi | — |
 | G5 | Gọi đến khi app ở nền / màn khoá, giữ cuộc gọi khi tắt màn, đổi Wi-Fi ↔ 3G giữa cuộc, thử qua proxy | Phát hành |

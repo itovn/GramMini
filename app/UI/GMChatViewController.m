@@ -1,3 +1,4 @@
+#import "GMCallManager.h"
 #import "GMChatViewController.h"
 #import "GMPasscode.h"
 #import "GMCore.h"
@@ -363,6 +364,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     UIView *_inputBox;
     CGFloat _barH;
     GMTitleView *_titleView;
+    UIButton *_callBtn;  // gọi thoại (chat riêng, không phải bot)
     CGFloat _layoutW;  // bề ngang đã dùng để xếp bong bóng
     UIButton *_attach;
     AVAudioRecorder *_recorder;
@@ -587,7 +589,23 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
             if (img) [wb setImage:img forState:UIControlStateNormal];
         }];
     }
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:av];
+    if ([self.kind isEqual:@"user"] && !saved && !self.topic) {
+        // Nút gọi thoại (D38, G4): viên kính tròn bên trái ảnh đại diện — chung một khung với ảnh (iOS 6 bỏ bớt nút bên phải
+        // khi không đủ chỗ cạnh viên tiêu đề rộng, nên không dùng hai bar button riêng)
+        UIView *box = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 80, 36)];
+        _callBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+        _callBtn.frame = CGRectMake(0, 0, 36, 36);
+        [_callBtn setBackgroundImage:[GMTheme glassButton:36 pressed:NO] forState:UIControlStateNormal];
+        [_callBtn setBackgroundImage:[GMTheme glassButton:36 pressed:YES] forState:UIControlStateHighlighted];
+        [_callBtn setImage:[GMTheme icon:@"phone" color:[GMTheme accent]] forState:UIControlStateNormal];
+        [_callBtn addTarget:self action:@selector(callTapped) forControlEvents:UIControlEventTouchUpInside];
+        [box addSubview:_callBtn];
+        av.frame = CGRectMake(44, 0, 36, 36);
+        [box addSubview:av];
+        self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:box];
+    } else {
+        self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:av];
+    }
     [GMCore call:@"net.state" args:nil done:^(id ok, NSDictionary *err) {
         _titleView.connecting = ok && ![GMVal(ok, @"ok") boolValue];
     }];
@@ -1746,6 +1764,15 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
 
 #pragma mark Trạng thái (dòng phụ dưới tên chat)
 
+/// Gọi thoại người của chat này (D38).
+- (void)callTapped {
+    NSMutableDictionary *chat = [NSMutableDictionary dictionaryWithObject:self.peer forKey:@"peer"];
+    if (self.title) [chat setObject:self.title forKey:@"name"];
+    if (self.photo) [chat setObject:self.photo forKey:@"photo"];
+    if (self.photoDc) [chat setObject:self.photoDc forKey:@"photo_dc"];
+    [[GMCallManager shared] callChat:chat];
+}
+
 - (void)showInfo {
     GMChatInfoViewController *i = [[GMChatInfoViewController alloc] init];
     i.peer = self.peer;
@@ -1850,6 +1877,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
         NSDictionary *menu = GMVal(GMVal(ok, @"bot_info"), @"menu");
         [self setBotMenu:[menu isKindOfClass:[NSDictionary class]] ? menu : nil];
         if (_historyLoaded && [GMVal(ok, @"bot") boolValue]) [self updateBotKeyboard];
+        if ([GMVal(ok, @"bot") boolValue]) _callBtn.hidden = YES;  // bot không nhận cuộc gọi
         [self checkBotStart];
         // Chưa vào (mở từ link, kết quả tìm): thanh «Tham gia» — nhóm thường đã rời thì không vào lại được (cần link mời)
         BOOL left = [GMVal(ok, @"left") boolValue] && ([self.peer hasPrefix:@"-100"] || self.joinHash);

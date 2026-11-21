@@ -8,6 +8,7 @@ build = "build.rs"
 
 [dependencies]
 gm-net = { path = "../gm-net" }
+gm-call = { path = "../gm-call" }
 gm-core = { path = "../gm-core" }
 gm-opus = { path = "../gm-opus" }
 gm-lottie = { path = "../gm-lottie" }
@@ -20,6 +21,11 @@ grammers-session.workspace = true
 grammers-tl-types = { workspace = true, features = ["tl-mtproto"] }
 tokio = { workspace = true, features = ["rt", "time", "net"] }
 serde_json = "1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
+
+# Đo thời gian CPU (getrusage) cho callselftest
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 # Nhập mật khẩu 2FA không hiện ra màn hình (đăng nhập làm trên PC)
 [target.'cfg(not(target_os = "ios"))'.dependencies]

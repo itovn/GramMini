@@ -14,6 +14,8 @@ use grammers_session::updates::UpdatesLike;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+pub mod call;
+
 const API_ID: Option<&str> = option_env!("GM_API_ID");
 const API_HASH: Option<&str> = option_env!("GM_API_HASH");
 

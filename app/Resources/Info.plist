@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.5.0</string>
+	<string>1.6.0</string>
 	<key>CFBundleVersion</key>
-	<string>1.5.0</string>
+	<string>1.6.0</string>
 	<key>CFBundleSupportedPlatforms</key>
 	<array>
 		<string>iPhoneOS</string>
@@ -44,6 +44,8 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>voip</string>
+		<!-- Gọi thoại: giữ micro / loa khi ra nền hoặc khoá máy giữa cuộc gọi (D38, G5) -->
+		<string>audio</string>
 	</array>
 	<!-- Link tg:// (nút «Mở trong Telegram» của trang t.me trong Safari, app khác) mở vào GramMini — iOS 5 / 6 không có app Telegram -->
 	<key>CFBundleURLTypes</key>

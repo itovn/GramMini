@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/gm-net", "crates/gm-opus", "crates/gm-lottie", "crates/gm-webm", "crates/gm-hevc", "crates/gm-core", "crates/gm-ffi", "crates/gm-cli"]
+members = ["crates/gm-net", "crates/gm-call", "crates/gm-opus", "crates/gm-lottie", "crates/gm-webm", "crates/gm-hevc", "crates/gm-core", "crates/gm-ffi", "crates/gm-cli"]
 
 [workspace.package]
 version = "0.1.0"

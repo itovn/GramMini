@@ -19,7 +19,7 @@ GramMini_FILES = main.m $(wildcard Core/*.m) Core/GMShims.c $(wildcard UI/*.m)
 ifneq ($(FINALPACKAGE),1)
 GramMini_FILES += $(wildcard Debug/*.m)
 endif
-GramMini_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore Accelerate AssetsLibrary ImageIO AVFoundation MediaPlayer QuickLook CoreMedia CoreVideo CFNetwork 	Security CoreText CoreLocation
+GramMini_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore Accelerate AssetsLibrary ImageIO AVFoundation MediaPlayer QuickLook CoreMedia CoreVideo CFNetwork 	Security CoreText CoreLocation AudioToolbox
 # API mới hơn iOS 5.0 dùng thẳng là lỗi lúc dựng (TubeMini D24) — chỗ cần iOS 6 thì hỏi lúc chạy (NSClassFromString…)
 GramMini_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Werror=unguarded-availability -Werror=partial-availability \
 	-ICore -IUI -IDebug

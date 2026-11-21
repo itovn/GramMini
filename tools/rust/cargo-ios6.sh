@@ -14,6 +14,9 @@ export IPHONEOS_DEPLOYMENT_TARGET=5.0
 RING_BASE="${RING_BASE:-$(cd "$ROOT/.." && pwd)/vendor}"
 RING="$RING_BASE/ring-0.17.14"
 [[ -d "$RING" ]] || RING_DST="$RING_BASE" bash "$ROOT/tools/rust/vendor-ring.sh" >/dev/null
+# webrtc-util (DTLS của gọi thoại) bỏ phụ thuộc nix 0.26 — không dựng được cho Apple 32-bit (vendor-webrtc-util.sh)
+WUTIL="$RING_BASE/webrtc-util-0.11.0"
+[[ -f "$WUTIL/.grammini-v1" ]] || { VENDOR_DST="$RING_BASE" bash "$ROOT/tools/rust/vendor-webrtc-util.sh" >/dev/null && touch "$WUTIL/.grammini-v1"; }
 # Mã C trong các crate dựng bằng clang của Theos cho armv7 iOS 5 (Cortex-A8 trở lên)
 export CC_armv7_apple_ios6="$TC/clang"
 export CFLAGS_armv7_apple_ios6="-target armv7-apple-ios5.0 -isysroot $SDKROOT -mcpu=cortex-a8"
@@ -30,4 +33,5 @@ exec cargo +nightly "$cmd" \
     -Z json-target-spec \
     --target "$ROOT/tools/rust/armv7-apple-ios6.json" \
     --config "patch.crates-io.ring.path=\"$RING\"" \
+    --config "patch.crates-io.webrtc-util.path=\"$WUTIL\"" \
     "$@"

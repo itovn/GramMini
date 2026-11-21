@@ -30,6 +30,8 @@
 #import "GMMap.h"
 #import "GMQuickReplies.h"
 #import "GMVietQRViewController.h"
+#import "GMCallManager.h"
+#import "GMCallViewController.h"
 
 static NSString *const kCmdFile = @"/var/mobile/Documents/GramMini-cmd.txt";
 
@@ -99,7 +101,66 @@ static void GMFindText(UIView *v, NSString *text) {
     NSString *cmd = sp.location == NSNotFound ? line : [line substringToIndex:sp.location];
     NSString *arg = sp.location == NSNotFound ? @"" : [line substringFromIndex:sp.location + 1];
     GMLog(@"[thử] %@", cmd);
-    if ([cmd isEqual:@"opensaved"]) {
+    if ([cmd isEqual:@"whoami"]) {
+        // Mã số tài khoản đang đăng nhập (không ghi tên) — biết máy thử nào dùng tài khoản nào
+        GMLog(@"[thử] tài khoản %@", app.list.myId ?: @"(chưa tải)");
+    } else if ([cmd isEqual:@"voipcall"]) {
+        // Gọi thoại thử (G3): voipcall <tên chat riêng (một phần)> — chỉ gọi chat thử anh giao
+        NSString *found = nil;
+        for (NSInteger r = 0; r < 1000; r++) {
+            NSDictionary *d = [app.list debugDialogAt:r];
+            if (!d) break;
+            NSString *name = GMVal(d, @"name");
+            if (arg.length && name && [name rangeOfString:arg options:NSCaseInsensitiveSearch].location != NSNotFound) {
+                found = [GMVal(d, @"peer") description];
+                break;
+            }
+        }
+        GMLog(@"[thử] voipcall: %@", found ? @"thấy chat" : @"không thấy chat");
+        if (found) [[GMCallManager shared] callPeer:found];
+    } else if ([cmd isEqual:@"emojicheck"]) {
+        // emojicheck <tệp, mỗi dòng một emoji>: ghi các emoji phông của máy không vẽ được (bảng emoji khoá cuộc gọi)
+        NSString *all = [NSString stringWithContentsOfFile:arg encoding:NSUTF8StringEncoding error:NULL];
+        NSMutableArray *miss = [NSMutableArray array];
+        NSArray *lines = [all componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+        for (NSUInteger i = 0; i < lines.count; i++) {
+            NSString *e = [lines objectAtIndex:i];
+            if (e.length && ![GMTheme emojiRenders:e]) [miss addObject:[NSString stringWithFormat:@"#%lu %@", (unsigned long)i, e]];
+        }
+        GMLog(@"[thử] emojicheck: %lu emoji, thiếu %lu: %@", (unsigned long)lines.count, (unsigned long)miss.count,
+              [miss componentsJoinedByString:@" "]);
+    } else if ([cmd isEqual:@"voipscreen"]) {
+        // Xem màn cuộc gọi với trạng thái giả (không gọi thật): voipscreen <requesting|ringing|incoming|connected|ended>
+        static GMCallViewController *demo;
+        if (demo) [demo dismissViewControllerAnimated:NO completion:nil];
+        demo = nil;
+        if (![arg isEqual:@"close"]) {
+            NSDictionary *chat = [app.list debugDialogAt:0];
+            demo = [[GMCallViewController alloc] initWithChat:chat];
+            BOOL hint = [arg hasSuffix:@"+hint"];
+            if (hint) arg = [arg substringToIndex:arg.length - 5];
+            NSMutableDictionary *st = [NSMutableDictionary dictionaryWithDictionary:@{@"state": arg.length ? arg : @"connected",
+                @"peer": GMVal(chat, @"peer") ?: @"1", @"duration": @75, @"relay": @NO, @"muted": @NO, @"reason": @"hangup"}];
+            if ([arg isEqual:@"connected"] || [arg isEqual:@"ended"] || [arg isEqual:@"reconnecting"]) {
+                [st setObject:@[@"🌈", @"😬", @"💿", @"✋"] forKey:@"emoji"];  // 😬: iOS 5 không vẽ được → «?»
+            }
+            [demo update:st];
+            UIViewController *root = app.window.rootViewController;
+            while (root.presentedViewController) root = root.presentedViewController;
+            [root presentViewController:demo animated:NO completion:nil];
+            if (hint) [demo performSelector:@selector(emojiTapped)];
+        }
+    } else if ([cmd isEqual:@"voipaccept"]) {
+        [[GMCallManager shared] accept];
+    } else if ([cmd isEqual:@"voipdecline"]) {
+        [[GMCallManager shared] decline];
+    } else if ([cmd isEqual:@"voiphangup"]) {
+        [[GMCallManager shared] hangup];
+    } else if ([cmd isEqual:@"voipspeaker"]) {
+        [[GMCallManager shared] setSpeaker:![arg isEqual:@"off"]];
+    } else if ([cmd isEqual:@"voipmute"]) {
+        [[GMCallManager shared] setMuted:![arg isEqual:@"off"]];
+    } else if ([cmd isEqual:@"opensaved"]) {
         // Tin nhắn đã lưu (tin thử chỉ gửi vào đây — «open 0» là chat đầu danh sách, có thể là chat thật)
         if (app.list.myId) [app.list openChat:@{@"peer": app.list.myId} jumpTo:nil];
     } else if ([cmd isEqual:@"open"]) {
@@ -204,6 +265,9 @@ static void GMFindText(UIView *v, NSString *text) {
             i.name = [d objectForKey:@"name"];
             [nav pushViewController:i animated:YES];
         }
+    } else if ([cmd isEqual:@"callbtn"] && [top isKindOfClass:[GMChatViewController class]]) {
+        // Bấm nút gọi thoại trên thanh tiêu đề chat đang mở (cùng đường mã với người dùng bấm)
+        [(GMChatViewController *)top performSelector:@selector(callTapped)];
     } else if ([cmd isEqual:@"tapmsg"] && [top isKindOfClass:[GMChatViewController class]]) {
         [(GMChatViewController *)top debugTapFromBottom:arg.integerValue];
     } else if ([cmd isEqual:@"copymsg"] && [top isKindOfClass:[GMChatViewController class]]) {

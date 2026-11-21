@@ -126,6 +126,8 @@ pub struct Core {
     flushing: std::sync::atomic::AtomicBool,
     /// Sticker / GIF đã lấy về (bộ sticker, gần đây, GIF đã lưu) theo mã tài liệu — để gửi lại, tải ảnh xem trước.
     docs: Mutex<std::collections::HashMap<i64, grammers_client::tl::types::Document>>,
+    /// Cuộc gọi thoại đang có (service/call.rs).
+    calls: Mutex<Option<call::Active>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -172,6 +174,7 @@ impl Core {
             outbox: Mutex::new(Vec::new()),
             flushing: std::sync::atomic::AtomicBool::new(false),
             docs: Mutex::new(Default::default()),
+            calls: Mutex::new(None),
         });
         *lock(&core.outbox) = std::fs::read(core.cfg.data_dir.join("outbox.json"))
             .ok()
@@ -1291,7 +1294,18 @@ impl Core {
 
     /// Nghe cập nhật (một lần): đẩy tin mới / sửa / xoá lên app.
     fn start_updates(self: &Arc<Self>) {
-        let Some(rx) = lock(&self.updates).take() else { return };
+        let Some(mut raw_rx) = lock(&self.updates).take() else { return };
+        // Tầng chia luồng: cập nhật cuộc gọi tách ra ở đây (service/call.rs) trước khi MessageBox có thể bỏ cả gói
+        let (tx, rx) = mpsc::channel(256);
+        let tap = Arc::clone(self);
+        tokio::spawn(async move {
+            while let Some(u) = raw_rx.recv().await {
+                tap.tap_phone(&u);
+                if tx.send(u).await.is_err() {
+                    break;
+                }
+            }
+        });
         let c = Arc::clone(self);
         tokio::spawn(async move {
             let mut stream = match c.client.stream_updates(rx, UpdatesConfiguration { catch_up: true }).await {
@@ -2031,6 +2045,11 @@ impl Core {
             "vietqr.make" => self.vietqr_make(a),
             "messages.sendContact" => Box::pin(self.send_contact(a)).await,
             "messages.pin" => Box::pin(self.pin(a)).await,
+            "call.request" => Box::pin(self.call_request(a)).await,
+            "call.accept" => Box::pin(self.call_accept()).await,
+            "call.hangup" => Box::pin(self.call_hangup(a)).await,
+            "call.mute" => self.call_mute(a),
+            "call.state" => self.call_state(),
             "messages.scheduled" => Box::pin(self.scheduled_list(a)).await,
             "messages.scheduledSend" | "messages.scheduledDelete" => Box::pin(self.scheduled_act(method, a)).await,
             "chat.info" => Box::pin(self.chat_info(a)).await,
@@ -2764,10 +2783,17 @@ fn action_text(m: &Message) -> Option<String> {
         A::ContactSignUp => format!("{who} đã tham gia Telegram"),
         A::ScreenshotTaken => format!("{who} đã chụp màn hình"),
         A::PhoneCall(x) => {
-            let kind = if x.video { "Cuộc gọi video" } else { "Cuộc gọi" };
+            // Như Telegram: hướng + thời lượng; không thời lượng: đi = «đã huỷ», đến = «nhỡ» / «đã từ chối» (bận)
+            use grammers_client::tl::enums::PhoneCallDiscardReason as R;
+            let video = if x.video { " video" } else { "" };
+            let out = m.outgoing();
             match x.duration {
-                Some(s) if s > 0 => format!("{kind} ({}:{:02})", s / 60, s % 60),
-                _ => format!("{kind} nhỡ / bị từ chối"),
+                Some(s) if s > 0 => {
+                    format!("Cuộc gọi{video} {} ({}:{:02})", if out { "đi" } else { "đến" }, s / 60, s % 60)
+                }
+                _ if out => format!("Cuộc gọi{video} đi — không trả lời"),
+                _ if matches!(x.reason, Some(R::Busy)) => format!("Cuộc gọi{video} đến — đã từ chối"),
+                _ => format!("Cuộc gọi{video} nhỡ"),
             }
         }
         A::GroupCall(_) | A::GroupCallScheduled(_) => "Cuộc gọi nhóm".into(),
@@ -2932,6 +2958,7 @@ pub fn msg_json(m: &Message) -> Value {
 }
 
 mod bots;
+mod call;
 mod contact;
 mod geo;
 mod links;

@@ -448,3 +448,117 @@ Anh yêu cầu đổi giao diện theo iOS 26, tham khảo Telegram mới nhất
   (gửi thử một ảnh vào Tin nhắn đã lưu rồi xoá), Danh bạ, thông tin chat, bảng sticker, Proxy, iPad chia đôi. Ký hiệu: 517, thiếu
   0 trên iPad 1 (iOS 5.1.1) và iPhone 5 đen (iOS 6.1.4). Sự cố: đầu buổi em lỡ cài bản thử lên iPhone 5 trắng (máy chính) — đã
   cài lại bản phát hành 1.4.5 (SHA-256 khớp) ngay khi anh giao máy thử.
+- **Đã phát hành** (anh bảo «Phát hành nha e», 21/11/2026): GitHub Release v1.5.0 (gói 4 117 304 byte, SHA-256
+  `d41beb34e205cfa912fa72f721bd1e92b37c5f1ccfbf77b7326e9044f1443e45` + `.deb.sig`), repo công khai 65399e4 (thẻ v1.5.0), nguồn
+  Cydia đã ký (1.4.4 / 1.4.5 / 1.5.0), trang mô tả + trang giới thiệu (ảnh minh hoạ mới dựng từ bộ mẫu D37 — dữ liệu giả, số điện
+  thoại để «9xx»). Ký hiệu: 563, thiếu 0 trên iPad 1 (iOS 5.1.1), iPhone 5 đen (iOS 6.1.4), iPad 4 (iOS 6.1.3). Cài thẳng bản phát
+  hành lên iPad 1: `gmupdate --verify` đúng, app chạy giao diện mới trên iOS 5. Tải lại: GitHub = Cydia (cùng SHA-256), chữ ký OTA
+  đúng, `gpgv` kiểm `Release.gpg` + `InRelease` đúng; API latest = v1.5.0 kèm `.sig`. **OTA thật trên iPad 4** (bản thử
+  1.4.5-1+debug → 1.5.0): «Có bản mới 1.5.0» → «Cập nhật» → `dpkg -i → 0` → app tự mở lại, bản 1.5.0.
+
+### Gọi thoại — bước G1 trên PC (21/11/2026, D38)
+
+- gm-cli đăng nhập tài khoản thử bằng phiên MỚI `keys/gm-cli-test.json` (anh đồng ý; không chép phiên; mã đăng nhập đọc
+  trên iPhone 5 đen). Crate mới `gm-call`: trao khoá DH (p an toàn — so với số của Telegram, không khớp thì Miller–Rabin; điều
+  kiện g; g_a / g_b trong khoảng an toàn), key_fingerprint, 4 emoji khoá (bảng 333 emoji đúng thứ tự tdesktop), mã hoá gói kiểu
+  EncryptedConnection (x = 0 / 8 / 128 / 136). Lệnh `gm-cli call <tên> [giây] [thư mục]`, `gm-cli calldump <thư mục>`.
+- Lần gọi 1: app iOS 18 của anh nghe máy nhưng đứng «Đang kết nối», không emoji — cập nhật `updatePhoneCall` đi qua MessageBox
+  của grammers bị bỏ (phiên lệch seq → coi là hổng, lấy bù getDifference — cập nhật cuộc gọi không có trong phần lấy bù). Sửa:
+  đọc thẳng `UpdatesLike` (luồng thô). Lần gọi 2: máy chủ chọn **8.0.0** (tgcalls V2), p2p cho phép, 2 đường: TURN
+  91.108.17.1:1400 + máy chủ chuyển tiếp 91.108.17.10:598 (peer_tag 16 byte); emoji khoá 🐴 🔴 🔪 🐥; app iOS gửi 16 gói báo hiệu
+  rồi tự ngắt sau 20 giây (Disconnect — chưa có âm thanh, đúng dự kiến).
+- Giải mã được báo hiệu của app iOS (msg_key khớp, x = 136): khung tgcalls — mỗi tin `seq` 4 byte (bit 30 = cần ack), loại 0xFE
+  (rỗng, làm gói gửi lại khác nhau), 0x7F (+ độ dài 4 byte + JSON), 0xFF (ack). Bên nghe chỉ gửi «Candidates» (host / srflx /
+  relay TURN / relay `reflector-<id>.reflector:598`) và gửi lại mãi vì mình chưa ack; chưa gửi «InitialSetup» (chờ bên gọi).
+- Bước tiếp (G2): báo hiệu V2 (ack, InitialSetup, NegotiateChannels), ICE (bên gọi điều khiển) + máy chủ chuyển tiếp Telegram,
+  DTLS 1.2 (bên gọi là khách) + SRTP, Opus; thử trên PC bằng tệp âm thanh (gửi tiếng, ghi tiếng nhận được ra WAV).
+
+### Gọi thoại — bước G2 trên PC: THÔNG với Telegram iOS 18 (21/11/2026)
+
+- Engine tgcalls V2 trong `gm-call::tg`, phỏng theo Ferrogram (MIT, ghi nguồn từng tệp + `LICENSE-FERROGRAM`): báo hiệu có ack,
+  thương lượng kênh (NegotiateChannels), ICE (bên gọi điều khiển, đề cử ngay) + máy chủ chuyển tiếp, DTLS 1.2 khách + SRTP
+  AES_CM_128_HMAC_SHA1_80, RTP Opus PT 111, bộ đệm chống rung. gm-cli phát tiếng bíp 660 Hz, ghi tiếng nhận ra WAV.
+- Gọi thử 4, 8, 10, 11: app iOS hiện **đồng hồ + 4 emoji trùng gm-cli** (🔉 😇 👌 👴 ở lần 8), đường p2p trong LAN. Hai chiều:
+  anh nghe rõ tiếng bíp ngắt quãng từ gm-cli, app báo nhận đủ luồng của mình (RTCP RR, mất 0 gói); mình nhận 670 gói / 40 giây, giải 657 gói, 0 lỗi, mất 3. App gửi Opus
+  Hybrid băng rộng, gói 60 ms = 3 khung 20 ms, CBR (~110 byte). Tiếng nhận nhỏ vì anh nói khẽ.
+- Lỗi đã sửa: bộ giải chỉ đủ 20 ms (app gửi 60 ms) → giải độ dài thay đổi; SRTCP một cửa sổ chống phát lại cho mọi SSRC (app gửi
+  RR + SR từ 2 SSRC, rơi một nửa) → theo từng SSRC; đọc nhầm RTCP phản hồi transport-cc làm gm-cli dừng giữa cuộc (lần 9).
+- Đối chiếu giờ: hai ảnh «Đang kết nối» (12:19, 12:25) là lần 1–2 của G1 (chưa có âm thanh — đúng là chưa thể thông); lần 4
+  (12:43) là lần đầu chạy engine và **thông ngay** (ảnh: đồng hồ + 🎹 🍷 🌎 ☔). Lần 6, 7 app không gửi RTP (có thể tắt micro),
+  không có ảnh màn hình. «Đang kết nối» trên app = tgcalls Reconnecting chưa từng Established. Log STUN: `GM_TRACE="info,ice=debug"`.
+- Công cụ: `gm-cli calldump | callreplay <thư mục>` (giải / phát lại báo hiệu đã ghi), `gm-cli opusdump <opus.bin> [ra.wav]`.
+- **Nhận cuộc gọi đến** (`gm-cli answer [chờ] [giây] [thư mục]`, lần 14): anh gọi tài khoản thử từ iOS 18 → gm-cli báo đổ chuông,
+  acceptCall (g_b), kiểm g_a khớp g_a_hash + key_fingerprint, engine vai bên nghe (ICE bị điều khiển, DTLS chủ) → app hiện đồng
+  hồ + emoji 🔑 🃏 🎄 🏦 trùng gm-cli; nhận 677 gói / 40 giây, 0 lỗi. Phải hỏi `updates.getState` trước khi chờ — không thì máy
+  chủ không đẩy `updatePhoneCall` cho phiên (2 lần chờ đầu không thấy cuộc gọi). App iOS đề nghị 12 phiên bản (2.7.7 … 19.0.0),
+  máy chủ chọn bản chung 8.0.0.
+- **5 phút qua 5G** (lần 15): iPhone tắt Wi-Fi, emoji 🏄 👫 🎰 📻 trùng, anh nghe bíp đều; nhận 5002 gói, 0 lỗi, 0 mất, RTCP
+  119/119. Đường vẫn p2p (hai bên xuyên NAT được).
+- **Đường chuyển tiếp** (lần 16, `GM_RELAY_ONLY=1` — không mở socket host): ICE chọn máy chủ chuyển tiếp Telegram (route relay);
+  nhận 667 gói / 40 giây, 0 lỗi, mất 2.
+- **G2 XONG** (21/11/2026): gọi đi + gọi đến, tiếng hai chiều, Wi-Fi / 5G, p2p / chuyển tiếp, 5 phút. Bước tiếp G3: đưa lên iOS
+  5 / 6 (dựng gm-call cho armv7, cầu AudioUnit VoiceProcessingIO ↔ lõi, loa trong / ngoài, cảm biến tiệm cận, đo CPU).
+
+### Gọi thoại — G3 bước 1: lõi gọi thoại chạy trên iOS 5 / 6 (21/11/2026)
+
+- gm-call dựng được cho armv7 (gm-probe = gm-cli trên máy): `nix` 0.26 (phụ thuộc bắt buộc của webrtc-util, chỉ dùng cho
+  tính năng `ifaces` mà mình tắt) không dịch được cho Apple 32-bit → `tools/rust/vendor-webrtc-util.sh` bỏ phụ thuộc đó,
+  `cargo-ios6.sh` vá qua `[patch.crates-io]` như ring. Kiểm ký hiệu iOS 5.1.1 + 6.1.4: 168, thiếu 0.
+- `gm-cli callselftest [giây] [độ phức tạp] [băng thông] [voice|tone|none]`: hai engine (bên gọi + bên nghe) trong một tiến
+  trình qua 127.0.0.1 — ICE, DTLS, SRTP, Opus đủ cả. Thông sau 233 ms (iPhone 5), 209 ms (iPad 4), 312 ms (iPad 1); 2001
+  gói, 0 lỗi, mỗi bên nghe đúng tiếng bên kia. Engine riêng (không mã / giải): ~3% một nhân A4 mỗi cuộc gọi.
+- libopus trên ARM chuyển sang **số nguyên** (FIXED_POINT, silk/fixed) — VFP của Cortex-A8 chậm; PC giữ số thực. Bộ mã cuộc
+  gọi: báo «tiếng nói» (không tự chuyển CELT), độ phức tạp 5, toàn dải. `gm-cli opusbench` (% một nhân khi mã, mức 10 / 5 /
+  2): iPad 1 22,6 / 13,8 / 6,5; iPhone 5 9,3 / 5,8 / 2,9. Giải luồng thật của app Telegram (gói lưu ở lần gọi 14): 2,2% /
+  1,0%. → Cả cuộc gọi ~19% một nhân A4, ~8% A6. Tin thoại vẫn mã / giải đúng với bản số nguyên (iPad 1).
+- Bước tiếp G3: cầu AudioUnit VoiceProcessingIO (khử vọng) ↔ lõi qua gm-ffi, gm-core đọc cập nhật cuộc gọi từ luồng thô
+  (+ updates.getState), loa trong / ngoài, cảm biến tiệm cận.
+
+### Gọi thoại — G3 bước 2: GramMini gọi được từ iPhone 5 iOS 6 (21/11/2026)
+
+- Lõi: `gm_call::tg::io` (cầu âm thanh: callback AudioUnit chỉ chép mẫu, `try_lock`; luồng `gm-voip` mỗi 10 ms mã Opus /
+  giải vào bộ đệm loa ~40 ms); gm-core `service/call.rs` (`call.request / accept / hangup / mute / state`, sự kiện
+  `call.state` requesting → ringing / incoming → exchanging → connecting → connected / reconnecting → ended), tầng chia luồng
+  cập nhật thô trước MessageBox (`tap_phone`); gm-ffi `gm_voip_push / gm_voip_pull / gm_voip_level`.
+- App: `GMCallAudio` (VoiceProcessingIO 48 kHz 16 bit, AGC, PlayAndRecord + VoiceChat, loa ngoài qua AudioSession C — chạy cả
+  iOS 5, cảm biến tiệm cận khi loa trong), `GMCallManager` (bật âm thanh từ lúc trao khoá, hộp «Cuộc gọi thoại đến» Nghe / Từ
+  chối, hộp trạng thái tạm + emoji, Gác máy / Loa ngoài — màn kính đầy đủ ở G4), lệnh thử `voipcall / voipaccept / voiphangup /
+  voipspeaker / voipmute`. Ký hiệu iOS 5.1.1 + 6.1.4: 535, thiếu 0.
+- Gọi thật iPhone 5 đen (GramMini, tài khoản thử) → Telegram iOS 18 của anh: lần 1 emoji 😬 🚤 💯 🐭, lần 2 (sau respring
+  các máy) 🌈 🏃 💿 ✋ — **trùng trên app iOS 18** (ảnh anh gửi). Âm thanh 48 000 Hz, bộ đệm 21,3 ms. Lần 2 kéo dài 238 giây,
+  anh gác bên iOS 18 → app tự kết thúc, tắt âm thanh: nhận 3893 gói (0 lỗi), gửi 11 736 khung (50 / giây), loa thiếu 0 mẫu,
+  callback bỏ lượt 5. Mức micro chỉ 100–190 (phòng đặt máy yên lặng).
+- Còn của G3: nhận cuộc gọi đến trên app, thử trên iOS 5 (iPad 1), tiếng nói thật ở phía iPhone 5, đo CPU trong app.
+
+### Gọi thoại — G4 / G5: giao diện + chạy nền (21/11/2026)
+
+- **Màn cuộc gọi** `GMCallViewController`: nền theo màu người bên kia (dải màu + vầng sáng), ảnh đại diện, tên, trạng thái
+  (Đang gọi / Đang đổ chuông / Đang trao khoá / đồng hồ + vạch sóng / Đang kết nối lại / lý do kết thúc), viên kính 4 emoji
+  (chạm → chú thích mã hoá đầu-cuối). Nút kính trên nền tối: Loa ngoài · Tắt micro · Kết thúc; cuộc gọi đến: Từ chối · Nghe.
+  Chụp trên iPhone 5 (iOS 6), iPad 4 (nằm ngang), iPad 1 (iOS 5) — lệnh thử `voipscreen <trạng thái>[+hint]`.
+- **Nút gọi** viên kính ống nghe trên thanh tiêu đề chat riêng (chung khung với ảnh đại diện — iOS 6 bỏ bớt bar button khi
+  chật cạnh viên tiêu đề), ẩn với bot. Tin dịch vụ: «Cuộc gọi đi / đến (m:ss)», «… đi — không trả lời», «… nhỡ», «… đã từ chối».
+- **Âm báo**: chuông 3 nốt (tự tạo, `call-ring.wav`) mỗi 3 giây bằng AudioServicesPlayAlertSound — rung, theo công tắc im lặng;
+  app ở nền: thông báo «… đang gọi…» kèm chuông dài 27 giây; cuộc gọi nhỡ khi ở nền → thông báo. Tiếng chờ 425 Hz (1 / 4 giây)
+  tổng hợp trong callback loa khi máy bên kia đổ chuông.
+- **Nền / ngắt**: UIBackgroundModes thêm `audio`. Thử thật (gọi iOS 18 bằng nút gọi): app ra nền 18 giây (mở Safari) — tiếng vẫn
+  đi đều hai chiều (16,7 gói / giây đến, 50 khung / giây đi), loa hụt 28 ms lúc chuyển app. Bị ngắt (cuộc gọi điện thoại thường):
+  iOS 6 nghe thông báo, iOS 5 delegate — chạy lại AudioUnit. Tắt micro: khung gửi dừng hẳn, bật lại chạy tiếp.
+- **Nhiều máy cùng tài khoản** (iPhone 5 đen + iPad 4 cùng tài khoản thử): Accepted / Call khi đang đổ chuông → «Đã nghe trên máy
+  khác», thôi đổ chuông; log mọi cập nhật cuộc gọi để thử thật.
+- **Emoji khoá trên iOS 5**: kiểm 333 emoji bằng phông của máy (`emojicheck`): iOS 6 đủ; iOS 5.1.1 thiếu 😛 😴 😬 (Unicode
+  6.1) → hiện «?» + tả bằng chữ trong chú thích.
+- **Tin thoại** với Opus số nguyên (Tin nhắn đã lưu, tài khoản thử, iPhone 5): gửi tệp 0:03 (0,9 giây), phát (giải 0,57 giây),
+  ghi âm micro 3 giây → gửi, sóng âm có tiếng ồn phòng.
+- Sửa: bấm «Nghe» khi không còn cuộc gọi đến từng bật micro → chỉ cho nghe / từ chối lúc đang đổ chuông.
+- **Gọi vào app** (anh gọi tài khoản thử bằng Telegram iOS 18; iPhone 5 đen + iPad 4 cùng tài khoản thử cùng đổ chuông):
+  1. Nghe trên iPhone 5 → thông ~2 giây (👴 👌 🔗 😵), iOS báo gửi 317 gói / iPhone 5 nhận 318 — mất 0; iPad 4 thôi đổ chuông.
+  2. Từ chối → «bận»; iPad 4 thôi đổ chuông.  3. Người gọi tự huỷ → cả hai máy «nhỡ».
+  4. App ở nền (đang mở Safari): thông báo «<tên> đang gọi…» + chuông dài; mở app → màn cuộc gọi đến → Nghe → thông
+     (🏉 🍩 ❗ ⌚); iPad 4 «đã xử lý trên máy khác».
+  Máy chủ báo máy khác: người gọi huỷ → Discarded lý do Missed; máy khác nghe / từ chối → Discarded KHÔNG lý do → app ghi
+  «elsewhere», không báo nhỡ. CPU cả app khi đang gọi trên iPhone 5 ~17–19% (gồm khử vọng của iOS chạy trong app).
+- Hai lần «không có tiếng» lúc thử là do anh gọi từ một app Telegram khác (chỉ hỗ trợ tới giao thức 13.0.0, app đó không phát
+  tiếng — chính gm-cli nghe máy cũng 0 gói, iOS báo đã gửi 0 gói); gọi từ Telegram iOS 18 thì bình thường. Số liệu cuộc gọi có
+  thêm «bên kia báo đã gửi N gói» (đọc báo cáo SR) để phân biệt bên kia không phát với mất gói.
+- iPad 1 (iOS 5): anh bảo không cần thử gọi (tài khoản trên đó không dùng); màn cuộc gọi + ký hiệu đã kiểm trên iOS 5.

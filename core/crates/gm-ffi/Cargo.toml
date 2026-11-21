@@ -12,6 +12,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 gm-core = { path = "../gm-core" }
+gm-call = { path = "../gm-call" }
 gm-lottie = { path = "../gm-lottie" }
 gm-webm = { path = "../gm-webm" }
 gm-hevc = { path = "../gm-hevc" }
