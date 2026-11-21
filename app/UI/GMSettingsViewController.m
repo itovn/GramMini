@@ -1,3 +1,4 @@
+#import "GMRecentCallsViewController.h"
 #import "GMSettingsViewController.h"
 #import "GMChatViewController.h"
 #import "GMCore.h"
@@ -29,7 +30,7 @@ typedef NS_ENUM(NSInteger, GMSection) { GMSecProfile, GMSecMain, GMSecAbout, GMS
 
 /// Các mục chính (biểu tượng, tên) — thứ tự như Telegram 4.9.
 static NSArray *GMSettingsRows(void) {
-    return @[@[@"saved", @"Tin nhắn đã lưu"], @[@"folders", @"Thư mục chat"], @[@"quick", @"Tin nhắn nhanh"], @[@"notify", @"Thông báo"],
+    return @[@[@"saved", @"Tin nhắn đã lưu"], @[@"calls", @"Cuộc gọi gần đây"], @[@"folders", @"Thư mục chat"], @[@"quick", @"Tin nhắn nhanh"], @[@"notify", @"Thông báo"],
              @[@"lock", @"Quyền riêng tư và bảo mật"],
              @[@"storage", @"Dữ liệu và bộ nhớ"], @[@"stickers", @"Sticker"], @[@"theme", @"Giao diện"], @[@"proxy", @"Proxy"]];
 }
@@ -172,6 +173,8 @@ static NSArray *GMSettingsRows(void) {
             c.title = @"Tin nhắn đã lưu";
             if ([(GMAppDelegate *)[UIApplication sharedApplication].delegate showDetail:c]) return;  // iPad: bên phải
             vc = c;
+        } else if ([k isEqual:@"calls"]) {
+            vc = [[GMRecentCallsViewController alloc] initWithStyle:UITableViewStylePlain];
         } else if ([k isEqual:@"notify"]) {
             vc = [[GMNotifySettingsViewController alloc] init];
         } else if ([k isEqual:@"quick"]) {

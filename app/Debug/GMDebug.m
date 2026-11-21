@@ -32,6 +32,7 @@
 #import "GMVietQRViewController.h"
 #import "GMCallManager.h"
 #import "GMCallViewController.h"
+#import <AudioToolbox/AudioToolbox.h>
 
 static NSString *const kCmdFile = @"/var/mobile/Documents/GramMini-cmd.txt";
 
@@ -118,6 +119,15 @@ static void GMFindText(UIView *v, NSString *text) {
         }
         GMLog(@"[thử] voipcall: %@", found ? @"thấy chat" : @"không thấy chat");
         if (found) [[GMCallManager shared] callPeer:found];
+    } else if ([cmd isEqual:@"ringtest"]) {
+        // Kiểm tệp chuông (µ-law 8 kHz) iOS đọc được làm âm hệ thống, phát thử một hồi chuông ngắn
+        for (NSString *n in @[@"call-ring", @"call-ring-long"]) {
+            NSURL *u = [[NSBundle mainBundle] URLForResource:n withExtension:@"wav"];
+            SystemSoundID sid = 0;
+            OSStatus st = u ? AudioServicesCreateSystemSoundID((__bridge CFURLRef)u, &sid) : -1;
+            GMLog(@"[thử] ringtest %@: %@ OSStatus %d", n, u ? @"có tệp" : @"THIẾU tệp", (int)st);
+            if (st == noErr && [n isEqual:@"call-ring"]) AudioServicesPlayAlertSound(sid);
+        }
     } else if ([cmd isEqual:@"emojicheck"]) {
         // emojicheck <tệp, mỗi dòng một emoji>: ghi các emoji phông của máy không vẽ được (bảng emoji khoá cuộc gọi)
         NSString *all = [NSString stringWithContentsOfFile:arg encoding:NSUTF8StringEncoding error:NULL];

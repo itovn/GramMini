@@ -243,6 +243,61 @@ impl Core {
         Ok(act.json())
     }
 
+    /// `calls.recent` {missed?, offset_id?, limit?}: cuộc gọi gần đây ở mọi chat riêng, mới → cũ (như mục «Cuộc gọi gần đây» của
+    /// Telegram). Mỗi mục: {id, peer, name, photo, photo_dc, date, out, duration, reason (missed / busy / hangup / disconnect /
+    /// ""), video}. `missed`: chỉ cuộc gọi nhỡ. Tải tiếp: `offset_id` = `id` của mục cuối.
+    pub(super) async fn calls_recent(&self, a: &Value) -> Res {
+        let missed = a.get("missed").and_then(Value::as_bool).unwrap_or(false);
+        let offset_id = a.get("offset_id").and_then(Value::as_i64).unwrap_or(0) as i32;
+        let limit = a.get("limit").and_then(Value::as_i64).unwrap_or(50).clamp(1, 100) as i32;
+        let r = self
+            .client
+            .invoke(&functions::messages::Search {
+                peer: enums::InputPeer::Empty,
+                q: String::new(),
+                from_id: None,
+                saved_peer_id: None,
+                saved_reaction: None,
+                top_msg_id: None,
+                filter: enums::MessagesFilter::InputMessagesFilterPhoneCalls(types::InputMessagesFilterPhoneCalls { missed }),
+                min_date: 0,
+                max_date: 0,
+                offset_id,
+                add_offset: 0,
+                limit,
+                max_id: 0,
+                min_id: 0,
+                hash: 0,
+            })
+            .await?;
+        let (msgs, users, chats) = match r {
+            enums::messages::Messages::Messages(x) => (x.messages, x.users, x.chats),
+            enums::messages::Messages::Slice(x) => (x.messages, x.users, x.chats),
+            enums::messages::Messages::ChannelMessages(x) => (x.messages, x.users, x.chats),
+            enums::messages::Messages::NotModified(_) => (Vec::new(), Vec::new(), Vec::new()),
+        };
+        let peers = self.client.build_peer_map(users, chats).await;
+        let mut out = Vec::new();
+        for raw in msgs {
+            let m = grammers_client::message::Message::from_raw(&self.client, raw, None, peers.handle());
+            let Some(enums::MessageAction::PhoneCall(x)) = m.action() else { continue };
+            let (photo, photo_dc) = m.peer().map(peer_photo).unwrap_or((Value::Null, Value::Null));
+            out.push(json!({
+                "id": m.id(),
+                "peer": peer_key(m.peer_id()),
+                "name": m.peer().map(peer_name),
+                "photo": photo,
+                "photo_dc": photo_dc,
+                "date": m.date().as_second(),
+                "out": m.outgoing(),
+                "duration": x.duration.unwrap_or(0),
+                "reason": if x.reason.is_some() { reason_str(&x.reason) } else { "" },
+                "video": x.video,
+            }));
+        }
+        Ok(Value::Array(out))
+    }
+
     /// `call.state`: cuộc gọi hiện có (null nếu không), kèm số liệu gỡ lỗi (`stats`: gói đi / đến của engine, mức micro, số lượt
     /// callback bỏ qua, số mẫu loa phải bù im lặng).
     pub(super) fn call_state(&self) -> Res {

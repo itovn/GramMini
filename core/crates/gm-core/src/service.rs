@@ -2050,6 +2050,7 @@ impl Core {
             "call.hangup" => Box::pin(self.call_hangup(a)).await,
             "call.mute" => self.call_mute(a),
             "call.state" => self.call_state(),
+            "calls.recent" => Box::pin(self.calls_recent(a)).await,
             "messages.scheduled" => Box::pin(self.scheduled_list(a)).await,
             "messages.scheduledSend" | "messages.scheduledDelete" => Box::pin(self.scheduled_act(method, a)).await,
             "chat.info" => Box::pin(self.chat_info(a)).await,

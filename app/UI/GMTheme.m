@@ -1697,6 +1697,7 @@ static NSDateComponents *GMDay(NSDate *d) {
     else if ([kind isEqual:@"folders"]) top = 0x0F9BB0;
     else if ([kind isEqual:@"community"]) top = 0x2F7DF6;
     else if ([kind isEqual:@"quick"]) top = 0xE08600;
+    else if ([kind isEqual:@"calls"]) top = 0x2FA43F;
     else top = 0x7A7A80;
     img = GMDraw(CGSizeMake(29, 29), ^(CGContextRef ctx) {
         UIBezierPath *sq = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, 29, 29) cornerRadius:7.5];
@@ -1788,6 +1789,16 @@ static NSDateComponents *GMDay(NSDate *d) {
             CGContextAddLineToPoint(ctx, 15.5, 12.5);
             CGContextClosePath(ctx);
             CGContextFillPath(ctx);
+        } else if ([kind isEqual:@"calls"]) {
+            // Cuộc gọi gần đây: ống nghe
+            UIBezierPath *p = [UIBezierPath bezierPath];
+            [p moveToPoint:CGPointMake(9, 9)];
+            [p addCurveToPoint:CGPointMake(20, 20) controlPoint1:CGPointMake(9, 15) controlPoint2:CGPointMake(14, 20)];
+            p.lineWidth = 3.2;
+            p.lineCapStyle = kCGLineCapRound;
+            [p stroke];
+            [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(6.5, 5.5, 5, 6) cornerRadius:1.6] fill];
+            [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(17.5, 17.5, 6, 5) cornerRadius:1.6] fill];
         } else if ([kind isEqual:@"storage"]) {
             // Biểu đồ tròn: vòng + một múi đặc
             CGContextSetLineWidth(ctx, 1.8);

@@ -562,3 +562,14 @@ Anh yêu cầu đổi giao diện theo iOS 26, tham khảo Telegram mới nhất
   tiếng — chính gm-cli nghe máy cũng 0 gói, iOS báo đã gửi 0 gói); gọi từ Telegram iOS 18 thì bình thường. Số liệu cuộc gọi có
   thêm «bên kia báo đã gửi N gói» (đọc báo cáo SR) để phân biệt bên kia không phát với mất gói.
 - iPad 1 (iOS 5): anh bảo không cần thử gọi (tài khoản trên đó không dùng); màn cuộc gọi + ký hiệu đã kiểm trên iOS 5.
+
+### Phát hành 1.6.0 — gọi thoại (21/11/2026)
+
+- Bản 1.6.0 (app/control + Info.plist; THIET-KE §0.7: gọi thoại 1-1 có từ 1.6.0). `build-release.sh` → .deb 4,84 MB (1.5.0:
+  4,12 MB), SHA-256 0f55c89a…; ký hiệu iOS 5.1.1 (iPad 1) + 6.1.3 / 6.1.4: 587, thiếu 0. Cài thẳng bản phát hành lên iPad 1:
+  `gmupdate --verify` đúng, app mở, 100 chat 882 ms.
+- Repo công khai itovn/GramMini: ảnh chụp sạch 0c8fcbf (đã quét tên chat / tài khoản thử, mã tài khoản — thay bằng «tài khoản
+  thử» cả ở repo riêng). Release v1.6.0 (.deb + .sig). Nguồn Cydia: 1.4.5 / 1.5.0 / 1.6.0, ký GPG; trang thêm mục «Gọi thoại».
+- Kiểm tải: GitHub = Cydia (cùng SHA-256), gpgv Release.gpg + InRelease đúng, API latest = v1.6.0 kèm .sig. **OTA thật trên iPad 4**
+  (bản thử 1.5.0-1+debug → 1.6.0): gmupdate → dpkg -i → 0 → khởi động lại SpringBoard → app mở lại, đang dùng 1.6.0.
+- Tiếp theo (anh giao): danh sách «Cuộc gọi gần đây», nén tệp chuông → phát hành 1.6.1.
