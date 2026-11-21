@@ -36,6 +36,10 @@
 - (void)debugTapFromBottom:(NSInteger)k;
 - (void)debugCopyFromBottom:(NSInteger)k;
 - (void)debugMenuFromBottom:(NSInteger)k;
+/// Gỡ lỗi: chạm mục thứ `i` của menu giữ tin đang mở.
+- (void)debugMenuTap:(NSInteger)i;
+/// Gỡ lỗi: bảng đính kèm — «open», «sel <i>» (chọn ảnh thứ i), «send» (gửi ảnh đã chọn), «close».
+- (void)debugAttach:(NSString *)arg;
 - (void)debugReplyFromBottom:(NSInteger)k;
 /// Công cụ thử: thả cảm xúc `emoji` («-» = gỡ) vào tin thứ k từ dưới lên; mở bảng chọn cảm xúc (i ≥ 0: chạm emoji thứ i).
 - (void)debugReactFromBottom:(NSInteger)k emoji:(NSString *)emoji;

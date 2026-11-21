@@ -416,3 +416,35 @@ Anh báo iPhone 5 vào safe mode, nhờ điều tra rồi sửa và phát hành 
   iOS 6 gọi `UTF8String` (NULL) không kiểm → sập → safe mode. Hai lần sập (19/11 20:24:57, 21/11 07:50:05) trùng tới mili-giây
   với hai lần GramMini đẩy thông báo; lần 19/11 máy không nạp Glass 6.
 - Sửa: `+[GMTheme cut:max:]` (cắt theo ký tự ghép) + `+[GMTheme validUTF16:]` cho chữ thông báo; các chỗ cắt chữ khác dùng chung.
+- Thử hàm cắt mới trên Foundation của iOS 6 thật (chương trình thử nhỏ, iPhone 5 thử): cách cũ với emoji ở vị trí 179 →
+  `UTF8String` NULL (đúng điều kiện sập); cách mới đúng ở mọi vị trí 176–182, dấu tổ hợp vắt mốc, nửa surrogate lẻ.
+- Đã phát hành: GitHub Release v1.4.5 (gói 4 093 360 byte, SHA-256 `e751ec73f2b4c290d1eef18af843fb6c7d1655468f42c9d763f1d33795562c60`
+  + `.deb.sig`), repo công khai b0b6d11 (thẻ v1.4.5), nguồn Cydia đã ký (1.4.3 / 1.4.4 / 1.4.5), trang mô tả + trang giới thiệu.
+  Ký hiệu: 552, thiếu 0 trên iPhone 5 (iOS 6.1.4) và iPad 1 (iOS 5.1.1). Cài thẳng bản phát hành lên iPad 1: `gmupdate --verify`
+  đúng, app mở lại 1.4.5. Tải lại: GitHub = Cydia (cùng SHA-256), chữ ký OTA đúng, `gpgv` kiểm `Release.gpg` đúng; API latest =
+  v1.4.5. iPhone 5 vẫn chạy 1.4.4 — app sẽ tự báo «Có bản mới 1.4.5».
+
+### Bản 1.5.0 — giao diện «kính lỏng» kiểu iOS 26 / Telegram 12 (đang thử, 21/11/2026)
+
+Anh yêu cầu đổi giao diện theo iOS 26, tham khảo Telegram mới nhất; duyệt 7 màn mẫu «như ảnh» — D37
+(`docs/PHUONG-AN-GIAO-DIEN-26.md`). Phương án gọi thoại (tgcalls V2 bằng Rust) — D38, làm sau khi phát hành 1.5.0.
+
+- GMTheme vẽ lại: trang trơn trắng / đen; thanh trên theo màu trang (màn chat / màn có hình nền: lát hình nền liền với nền màn,
+  vẽ lại khi xoay) + dải mờ dưới thanh; nút viên kính (nút quay lại tròn chỉ mũi tên, thay nút quay lại của iOS — iOS 5 / 6 cho nó
+  bề ngang tối thiểu lớn); thanh dưới viên kính nổi + viên chọn, hai bên lộ nền màn đang hiện (cả hình nền) + dải mờ; bảng nhóm
+  bo góc 12 vẽ theo vị trí ô (thay xong phải `setNeedsLayout` — nền mới chưa có khung); bong bóng phẳng có đuôi; ảnh chữ cái
+  phẳng; «Tin nhắn đã lưu» dấu trang trên tròn xanh; biểu tượng Cài đặt một màu; thanh trạng thái đen.
+- Danh sách chat: hàng phẳng, loa tắt tiếng / ghim / ✓✓ vẽ tay (thay emoji 🔇 📌 và chữ ✓✓ giãn cách), ô tìm hiện sẵn, thanh
+  thư mục viên kính. Màn chat: tiêu đề trong viên kính, nút quay lại có số chưa đọc, ô nhập ba viên kính, nút gửi tròn xanh, viên
+  ngày kính. Cài đặt: đầu trang ảnh 84 ở giữa, nút «Sửa».
+- `GMContextMenu` thay UIMenuController: chụp màn một lần ở 1/4 cỡ + vImage (3 lượt hộp), tin nhấc lên (vẽ ảnh nền bong bóng bằng
+  drawInRect: — `renderInContext:` của iOS 6 bỏ qua contentsCenter làm méo góc / mất đuôi), hàng cảm xúc, menu kính chia nhóm.
+  Máy RAM ≤ 256 MB (iPad 1): không làm mờ. iPhone 5: mở menu 115 ms.
+- `GMAttachSheet` thay UIActionSheet của ghim giấy: ảnh gần đây (ALAssetsLibrary, 60 ảnh), ô máy ảnh, «Gần đây ▾» → thư viện
+  của iOS; Thư viện / Tệp / Vị trí / Mã QR / Danh thiếp. Gửi một ảnh / lần (gửi ảnh dùng một tệp tạm chung).
+- Sửa kèm: màn Proxy trên iPad (khung nút tính theo bề ngang cả màn lúc viewDidLoad → «Lưu» kéo hết cột, «Thử kết nối» khuất).
+- Máy thử (anh giao): iPhone 5 đen (iOS 6.1.4, `ios.sh iphone2`) + iPad 4 (iOS 6.1.3, `ios.sh ipad4`; `cbscreen … 2048 1536`,
+  máy để ngang → ảnh xoay 180°). Đã xem: danh sách chat (sáng / tối), màn chat, Cài đặt, menu giữ tin (sáng / tối), bảng đính kèm
+  (gửi thử một ảnh vào Tin nhắn đã lưu rồi xoá), Danh bạ, thông tin chat, bảng sticker, Proxy, iPad chia đôi. Ký hiệu: 517, thiếu
+  0 trên iPad 1 (iOS 5.1.1) và iPhone 5 đen (iOS 6.1.4). Sự cố: đầu buổi em lỡ cài bản thử lên iPhone 5 trắng (máy chính) — đã
+  cài lại bản phát hành 1.4.5 (SHA-256 khớp) ngay khi anh giao máy thử.

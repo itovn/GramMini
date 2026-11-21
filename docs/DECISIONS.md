@@ -530,3 +530,25 @@ Thiết kế đầy đủ: [THIET-KE.md](THIET-KE.md).
   ở đó nửa emoji chỉ vẽ ra ô lỗi, không sập, nhưng làm luôn cho đồng bộ.
 - Roza có cùng dòng cắt chữ (sửa ở bản Roza 1.2.1). Glass 6 (tweak giao diện) thêm chốt chặn trong SpringBoard: lọc nửa surrogate
   trước khi SpringBoard dùng chữ của thông báo — máy cài Glass 6 không sập cả với app khác mắc lỗi này.
+
+## D37. Giao diện «kính lỏng» kiểu iOS 26 / Telegram 12 (anh duyệt bản mẫu) — 21/11/2026 (bản 1.5.0)
+
+- Anh yêu cầu đổi giao diện theo iOS 26, tham khảo Telegram mới nhất; em vẽ 7 màn mẫu (danh sách chat, chat, menu giữ tin,
+  đính kèm, Cài đặt; danh sách chat + chat tối — canvas `claude.ai/artifact/8GnRqDkVB6Ft9wJksXceAV`, ảnh PNG gửi sang điện
+  thoại). Phương án: `docs/PHUONG-AN-GIAO-DIEN-26.md`. Thay hướng «iOS 6 + kính trong» của D23; bố cục / tính năng của D14 giữ.
+- Anh chốt **như ảnh**: danh sách chat nền trơn (trắng / đen) hàng phẳng; bong bóng gửi xanh lá nhạt (tối: xanh dương đậm);
+  ô tìm kiếm ở đầu danh sách + thanh thư mục dạng viên kính; thanh dưới nổi; thanh trên không nền, nút viên kính; ô nhập ba viên.
+  Màn chưa có mẫu (Danh bạ, Đăng nhập, Proxy, xem ảnh, bảng sticker, iPad) làm theo cùng thành phần, mẫu bổ sung ở bản sau.
+- Không làm mờ khi cuộn (A4 không kham nổi): kính = ảnh vẽ sẵn (bán trong + viền sáng + vệt sáng + bóng đổ) trên nền tĩnh;
+  nội dung tan ở mép dưới thanh nổi bằng dải ảnh tĩnh; menu giữ tin / bảng đính kèm chụp màn một lần rồi làm mờ (vImage).
+- Thứ tự anh chốt: làm giao diện → thử ổn → phát hành → mới làm gọi thoại (D38).
+
+## D38. Gọi thoại 1-1 — sẽ làm sau bản giao diện mới — 21/11/2026
+
+- Tra cứu (`docs/PHUONG-AN-GOI-THOAI.md`): libtgvoip (giao thức 2.4.4) đã bị app chính thức bỏ (iOS 02/2025, Desktop 5.14,
+  Android 12.10.2) — máy chủ không tìm được phiên bản chung → `CALL_PROTOCOL_COMPAT_LAYER_INVALID`. tgcalls dựa libwebrtc,
+  không dựng được cho iOS 5 / 6. → Tự viết tgcalls V2 (8.0.0 / 9.0.0) bằng Rust trong lõi: ICE + máy chủ chuyển tiếp Telegram,
+  DTLS-SRTP, Opus (đã có), thu / phát AudioUnit VoiceProcessingIO. Không làm gọi video, gọi nhóm, gọi với Telegram Web.
+- Anh chốt **có làm**; anh cấp tài khoản Telegram thứ hai để gọi thử (máy chính vẫn chỉ thử trong Tin nhắn đã lưu, không chép
+  phiên sang PC — D24). Thử trên PC (gm-cli) trước; gọi được hai chiều với app chính thức mới đưa lên máy.
+- THIET-KE §0.7 («Không làm: gọi thoại / video») đổi thành: không làm gọi video; gọi thoại 1-1 theo D38.

@@ -34,6 +34,8 @@
 #import "GMAlert.h"
 #import "GMAppDelegate.h"
 #import "GMChatListViewController.h"
+#import "GMContextMenu.h"
+#import "GMAttachSheet.h"
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 
@@ -258,7 +260,7 @@ static const CGFloat kSchedH = 30;  // thanh «… tin hẹn giờ» trên ô nh
         _lottie.hidden = YES;
         [self.contentView addSubview:_lottie];
         _stickerTime = [self label:[UIFont systemFontOfSize:11] in:self.contentView];
-        _stickerTime.textColor = [UIColor whiteColor];
+        _stickerTime.textColor = [GMTheme pillText];
         _stickerTime.textAlignment = GMAlignCenter;
         _stickerTime.backgroundColor = [GMTheme pillBackground];
         _stickerTime.layer.cornerRadius = 8;
@@ -273,11 +275,13 @@ static const CGFloat kSchedH = 30;  // thanh «… tin hẹn giờ» trên ô nh
         _poll.hidden = YES;
         [_bubble addSubview:_poll];
         _pill = [self label:[UIFont boldSystemFontOfSize:13] in:self.contentView];
-        _pill.textColor = [UIColor whiteColor];
+        _pill.textColor = [GMTheme pillText];
         _pill.textAlignment = GMAlignCenter;
         _pill.numberOfLines = 0;
         _pill.backgroundColor = [GMTheme pillBackground];
-        _pill.layer.cornerRadius = 10;
+        _pill.layer.cornerRadius = 11;
+        _pill.layer.borderWidth = 0.5;
+        _pill.layer.borderColor = ([GMTheme dark] ? [UIColor colorWithWhite:1 alpha:0.14] : [UIColor colorWithWhite:1 alpha:0.9]).CGColor;
         _pill.clipsToBounds = YES;
     }
     return self;
@@ -414,6 +418,9 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     BOOL _menuCompact;               // đang gõ: nút «Menu» thu lại thành biểu tượng
     UIView *_datePanel;              // chọn ngày giờ hẹn gửi
     UIDatePicker *_datePicker;
+    UIButton *_backBtn;              // quay lại + số chưa đọc (viên kính)
+    GMContextMenu *_ctxMenu;         // menu giữ tin đang mở
+    GMAttachSheet *_attachSheet;     // bảng đính kèm đang mở
 }
 
 #pragma mark Dựng
@@ -479,13 +486,14 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     _bar = [[UIView alloc] initWithFrame:CGRectMake(0, b.size.height - kBarH, b.size.width, kBarH)];
     _bar.backgroundColor = [UIColor clearColor];
     _bar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    UIImageView *bbg = [[UIImageView alloc] initWithFrame:_bar.bounds];
-    bbg.image = [GMTheme glassBar];  // kính, vạch sáng mép trên
-    bbg.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [_bar addSubview:bbg];
+    // D37: thanh trong suốt — ba viên kính nổi trên hình nền (ghim giấy · ô chữ · mic / gửi)
     // Nút đính kèm (ảnh)
     _attach = [UIButton buttonWithType:UIButtonTypeCustom];
-    [_attach setImage:[GMTheme icon:@"clip"] forState:UIControlStateNormal];
+    [_attach setBackgroundImage:[GMTheme glassButton:40 pressed:NO] forState:UIControlStateNormal];
+    [_attach setBackgroundImage:[GMTheme glassButton:40 pressed:YES] forState:UIControlStateHighlighted];
+    _attach.adjustsImageWhenHighlighted = NO;
+    _attach.imageEdgeInsets = UIEdgeInsetsMake(-2, 0, 0, 0);
+    [_attach setImage:[GMTheme icon:@"clip" color:[GMTheme text]] forState:UIControlStateNormal];
     [_attach addTarget:self action:@selector(attachTapped) forControlEvents:UIControlEventTouchUpInside];
     [_bar addSubview:_attach];
     // Ô nhập nhiều dòng (tự giãn tới ~5 dòng, Return xuống dòng — gửi bằng nút «Gửi», như Telegram)
@@ -494,7 +502,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     _inputBox.backgroundColor = [UIColor clearColor];
     _inputBox.clipsToBounds = YES;
     UIImageView *fbg = [[UIImageView alloc] initWithFrame:_inputBox.bounds];
-    fbg.image = [GMTheme fieldImage];  // ô lõm bo tròn
+    fbg.image = [GMTheme fieldImage];  // viên kính bo tròn
     fbg.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [_inputBox addSubview:fbg];
     [_bar addSubview:_inputBox];
@@ -516,18 +524,13 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     _placeholder.userInteractionEnabled = NO;
     [_inputBox addSubview:_placeholder];
     _stickerBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    [_stickerBtn setImage:[GMTheme icon:@"sticker"] forState:UIControlStateNormal];
+    [_stickerBtn setImage:[GMTheme icon:@"sticker" color:[GMTheme secondaryText]] forState:UIControlStateNormal];
     [_stickerBtn addTarget:self action:@selector(stickerTapped) forControlEvents:UIControlEventTouchUpInside];
     [_inputBox addSubview:_stickerBtn];
     _send = [UIButton buttonWithType:UIButtonTypeCustom];
-    _send.frame = CGRectMake(b.size.width - 66, 0, 62, kBarH);
+    _send.frame = CGRectMake(b.size.width - 44, 4, 40, 40);
     _send.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
-    [_send setTitle:@"Gửi" forState:UIControlStateNormal];
-    // «Gửi»: nút xanh bóng kiểu iOS 6 (ảnh nền đặt ở updateSendButton — chế độ mic thì không có nền)
-    [_send setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    [_send setTitleShadowColor:[UIColor colorWithWhite:0 alpha:0.35] forState:UIControlStateNormal];
-    _send.titleLabel.shadowOffset = CGSizeMake(0, -1);
-    _send.titleLabel.font = [UIFont boldSystemFontOfSize:15];
+    // Gửi: tròn xanh mũi tên trắng; ô trống: viên kính có mic (ảnh đặt ở updateSendButton)
     _send.adjustsImageWhenHighlighted = NO;
     // Ô nhập trống: nút thành mic — giữ để ghi âm, thả để gửi, kéo ra ngoài để huỷ
     [_send addTarget:self action:@selector(sendTapped) forControlEvents:UIControlEventTouchUpInside];
@@ -544,7 +547,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     _recLabel = [[UILabel alloc] init];
     _recLabel.font = [UIFont systemFontOfSize:15];
     _recLabel.textColor = [UIColor colorWithRed:0.85 green:0.15 blue:0.12 alpha:1];
-    _recLabel.backgroundColor = [GMTheme fieldBackground];
+    _recLabel.backgroundColor = [UIColor clearColor];  // trên viên kính của ô nhập (ô trống lúc ghi âm)
     _recLabel.hidden = YES;
     [_bar addSubview:_recLabel];
     [self updateSendButton];
@@ -559,8 +562,14 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     [self layoutBars:NO];
     if (self.left) [self setJoinBar:YES];
 
+    // Nút quay lại viên kính kèm số chưa đọc của các chat khác (bản mẫu D37); iPad: chat là gốc của bên phải — không có
+    if (self.navigationController.viewControllers.count > 1 && [self.navigationController.viewControllers objectAtIndex:0] != self) {
+        _backBtn = [GMTheme backButton:self action:@selector(gmBack)];
+        self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:_backBtn];
+    }
     _titleView = [[GMTitleView alloc] init];
     _titleView.title = self.title;
+    _titleView.glass = YES;
     self.navigationItem.titleView = _titleView;
     _titleView.userInteractionEnabled = YES;
     [_titleView addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(showInfo)]];
@@ -611,6 +620,8 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
 /// Khung các phần theo kích thước thật của màn (viewDidLoad còn là khổ dọc; iPad nằm ngang / xoay máy đổi sau).
 - (void)viewWillLayoutSubviews {
     [super viewWillLayoutSubviews];
+    // Xoay máy: lát hình nền thanh trên theo bề ngang mới — chỉ khi màn chat đang ở trên (màn đẩy lên trên nó có nền riêng)
+    if (self.navigationController.topViewController == self) [GMTheme styleBarsFor:self animated:NO];
     [self layoutBars:NO];
     // Xoay máy / iPad nằm ngang: xếp lại bong bóng theo bề ngang mới (so với bề ngang đã xếp, không phải bề ngang bảng —
     // co giãn tự động có thể đã đổi bảng trước khi tới đây)
@@ -620,8 +631,20 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     }
 }
 
+/// Số chưa đọc trên nút quay lại: tổng của danh sách (chat đang mở đã về 0).
+- (void)updateBackCount {
+    if (!_backBtn) return;
+    GMAppDelegate *app = (GMAppDelegate *)[UIApplication sharedApplication].delegate;
+    [GMTheme setBackButton:_backBtn count:[app.list unreadTotal]];
+}
+
+- (void)gmBack {
+    [self.navigationController popViewControllerAnimated:YES];
+}
+
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    [self updateBackCount];
     if (_rows.count) [_table reloadData];  // GIF dừng lúc rời màn → chạy lại
 }
 
@@ -632,6 +655,10 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     }
     [_input resignFirstResponder];
     [[UIMenuController sharedMenuController] setMenuVisible:NO animated:NO];  // menu nhấn giữ không theo sang màn khác
+    [_ctxMenu dismiss];
+    _ctxMenu = nil;
+    [_attachSheet dismiss];
+    _attachSheet = nil;
 }
 
 /// Đặt khung trả lời / ô nhập / bảng theo bàn phím và chế độ soạn.
@@ -645,8 +672,8 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     [self updateMenuButton];
     CGFloat mw = [self menuWidth], lx = mw ? mw + 6 : 0;
     _menuBtn.frame = CGRectMake(6, _barH - 39, mw, 30);
-    _attach.frame = CGRectMake(2 + lx, _barH - 46, kAttachW, 44);
-    _inputBox.frame = CGRectMake(kAttachW + 4 + lx, 6, b.size.width - kAttachW - 72 - lx, _barH - 12);
+    _attach.frame = CGRectMake(4 + lx, _barH - 44, kAttachW, 40);
+    _inputBox.frame = CGRectMake(kAttachW + 8 + lx, 6, b.size.width - kAttachW - 56 - lx, _barH - 12);
     _input.frame = CGRectMake(4, 0, _inputBox.bounds.size.width - (_kbdMarkup ? 68 : 36), _inputBox.bounds.size.height);
     _kbdBtn.hidden = !_kbdMarkup;
     _placeholder.frame = CGRectMake(13, 0, MAX(40, _input.frame.size.width - 14), kInputMinH);
@@ -655,7 +682,7 @@ typedef NS_ENUM(NSInteger, GMCompose) { GMComposeNormal, GMComposeReply, GMCompo
     _stickerBtn.frame = CGRectMake(_inputBox.bounds.size.width - 34, _inputBox.bounds.size.height - kInputMinH, 32, kInputMinH);
     if (_stickersOpen) _stickers.frame = CGRectMake(0, b.size.height - kGMStickerPanelH, b.size.width, kGMStickerPanelH);
     _recLabel.frame = CGRectInset(_inputBox.frame, 10, 2);
-    _send.frame = CGRectMake(b.size.width - 66, _barH - 46, 62, 44);
+    _send.frame = CGRectMake(b.size.width - 44, _barH - 44, 40, 40);
     _panel.hidden = panelH == 0;
     _panel.frame = CGRectMake(0, y - panelH, b.size.width, kPanelH);
     CGFloat pinH = (_pinBar && !_pinBar.hidden) ? kPinH : 0;
@@ -2071,6 +2098,10 @@ static BOOL gDebugNoRead;
     NSDictionary *ev = n.userInfo;
     NSString *e = GMVal(ev, @"e");
     NSDictionary *m = GMVal(ev, @"msg");
+    if ([e isEqual:@"msg.new"] && _backBtn) {
+        // Danh sách chat cũng nghe sự kiện này (thứ tự không chắc) — đếm lại sau khi nó cập nhật
+        dispatch_async(dispatch_get_main_queue(), ^{ [self updateBackCount]; });
+    }
     if ([e isEqual:@"typing"] && [GMVal(ev, @"peer") isEqual:self.peer] && ![GMVal(ev, @"from") isEqual:self.myId]) {
         if (self.topic) return;  // không biết đang gõ ở chủ đề nào — dòng phụ giữ tên nhóm
         [self showTyping:ev];
@@ -2278,10 +2309,11 @@ static BOOL gDebugNoRead;
 
 - (void)updateSendButton {
     BOOL mic = [self micMode];
-    [_send setTitle:mic ? nil : @"Gửi" forState:UIControlStateNormal];
-    [_send setImage:mic ? [GMTheme icon:@"mic"] : nil forState:UIControlStateNormal];
-    [_send setBackgroundImage:mic ? nil : [GMTheme sendButtonImage:NO] forState:UIControlStateNormal];
-    [_send setBackgroundImage:mic ? nil : [GMTheme sendButtonImage:YES] forState:UIControlStateHighlighted];
+    [_send setTitle:nil forState:UIControlStateNormal];
+    [_send setImage:mic ? [GMTheme icon:@"mic" color:[GMTheme text]] : nil forState:UIControlStateNormal];
+    _send.imageEdgeInsets = UIEdgeInsetsMake(-2, 0, 0, 0);
+    [_send setBackgroundImage:mic ? [GMTheme glassButton:40 pressed:NO] : [GMTheme sendCircle:NO] forState:UIControlStateNormal];
+    [_send setBackgroundImage:mic ? [GMTheme glassButton:40 pressed:YES] : [GMTheme sendCircle:YES] forState:UIControlStateHighlighted];
 }
 
 - (NSString *)recPath {
@@ -2698,7 +2730,37 @@ static const unsigned char kGMBOM[3] = {0xEF, 0xBB, 0xBF};
 
 #pragma mark Đính kèm ảnh
 
+/// Ghim giấy: bảng đính kèm kính (D37) — ảnh gần đây + các loại khác.
 - (void)attachTapped {
+    [_input resignFirstResponder];
+    __weak GMChatViewController *ws = self;
+    UIView *host = self.navigationController.view ?: self.view;
+    [_attachSheet dismiss];
+    _attachSheet = [GMAttachSheet showIn:host
+        camera:[UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera]
+        pick:^(GMAttachKind k) {
+            GMChatViewController *me = ws;
+            switch (k) {
+                case GMAttachCamera: [me pickFrom:UIImagePickerControllerSourceTypeCamera]; break;
+                case GMAttachLibrary: [me pickFrom:UIImagePickerControllerSourceTypePhotoLibrary]; break;
+                case GMAttachFile: [me openFileBrowser]; break;
+                case GMAttachLocation: [me pickLocation]; break;
+                case GMAttachQR: [me openVietQR]; break;
+                case GMAttachContact: [me pickContactCard]; break;
+            }
+        }
+        photo:^(UIImage *img) { [ws sendImage:img]; }];
+}
+
+- (void)debugAttach:(NSString *)arg {
+    if ([arg isEqual:@"open"]) [self attachTapped];
+    else if ([arg hasPrefix:@"sel "]) [_attachSheet debugSelect:[[arg substringFromIndex:4] integerValue]];
+    else if ([arg isEqual:@"close"]) [_attachSheet dismiss];
+    else if ([arg isEqual:@"send"]) [_attachSheet debugSend];
+}
+
+/// Bảng chọn cũ (UIActionSheet) — giữ cho gỡ lỗi / máy không mở được bảng mới.
+- (void)attachTappedOld {
     [_input resignFirstResponder];
     UIActionSheet *s = [[UIActionSheet alloc] initWithTitle:nil delegate:self cancelButtonTitle:nil destructiveButtonTitle:nil
                                           otherButtonTitles:nil];
@@ -3002,27 +3064,55 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     return NO;
 }
 
+/// Nhấn giữ tin: menu kính (D37) — nền mờ, tin nhấc lên, hàng cảm xúc, các mục chia nhóm (thay UIMenuController của iOS 6).
 - (void)showMenuForRow:(NSInteger)row {
     NSDictionary *r = [_rows objectAtIndex:row];
     if (![[r objectForKey:@"type"] isEqual:@"msg"]) return;
-    _menuMsg = [r objectForKey:@"msg"];
+    NSDictionary *m = [r objectForKey:@"msg"];
+    _menuMsg = m;
     [_input resignFirstResponder];
-    [self becomeFirstResponder];
-    UIMenuController *mc = [UIMenuController sharedMenuController];
-    mc.menuItems = @[
-        [[UIMenuItem alloc] initWithTitle:@"Cảm xúc" action:@selector(gmReact:)],
-        [[UIMenuItem alloc] initWithTitle:@"Trả lời" action:@selector(gmReply:)],
-        [[UIMenuItem alloc] initWithTitle:@"Sao chép" action:@selector(gmCopy:)],
-        [[UIMenuItem alloc] initWithTitle:@"Chuyển tiếp" action:@selector(gmForward:)],
-        [[UIMenuItem alloc] initWithTitle:@"Lưu vào máy" action:@selector(gmSave:)],
-        [[UIMenuItem alloc] initWithTitle:[GMVal(_menuMsg, @"pinned") boolValue] ? @"Bỏ ghim" : @"Ghim" action:@selector(gmPin:)],
-        [[UIMenuItem alloc] initWithTitle:@"Sửa" action:@selector(gmEdit:)],
-        [[UIMenuItem alloc] initWithTitle:@"Xoá" action:@selector(gmDelete:)],
-    ];
     GMBubbleCell *c = (GMBubbleCell *)[_table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:row inSection:0]];
-    CGRect target = c ? [c.bubble convertRect:c.bubble.bounds toView:self.view] : CGRectMake(self.view.bounds.size.width / 2, 100, 1, 1);
-    [mc setTargetRect:target inView:self.view];
-    [mc setMenuVisible:YES animated:YES];
+    if (!c) return;
+    UIView *src = !c.bubble.hidden ? c.bubble : (!c.sticker.hidden ? c.sticker : c.contentView);
+    __weak GMChatViewController *ws = self;
+    NSMutableArray *items = [NSMutableArray array];
+    __block BOOL newGroup = NO;
+    void (^add)(NSString *, NSString *, SEL, BOOL) = ^(NSString *title, NSString *icon, SEL sel, BOOL red) {
+        if (![ws canPerformAction:sel withSender:nil]) return;
+        GMMenuItem *it = [GMMenuItem title:title icon:icon action:^{
+            GMChatViewController *me = ws;
+            if (!me) return;
+            me->_menuMsg = m;
+            ((void (*)(id, SEL, id))[me methodForSelector:sel])(me, sel, nil);
+        }];
+        it.destructive = red;
+        it.startsGroup = newGroup && items.count > 0;
+        newGroup = NO;
+        [items addObject:it];
+    };
+    add(@"Trả lời", @"reply", @selector(gmReply:), NO);
+    add(@"Sao chép", @"copy", @selector(gmCopy:), NO);
+    add(@"Chuyển tiếp", @"forward", @selector(gmForward:), NO);
+    add(@"Lưu vào máy", @"save", @selector(gmSave:), NO);
+    add([GMVal(m, @"pinned") boolValue] ? @"Bỏ ghim" : @"Ghim", @"pin", @selector(gmPin:), NO);
+    newGroup = YES;
+    add(@"Sửa", @"edit", @selector(gmEdit:), NO);
+    newGroup = YES;
+    add(@"Xoá", @"trash", @selector(gmDelete:), YES);
+    BOOL canReact = [self canReact:m];
+    if (!items.count && !canReact) return;
+    NSString *mine = [self myReaction:m];
+    NSNumber *mid = GMVal(m, @"id");
+    UIView *host = self.navigationController.view ?: self.view;
+    [_ctxMenu dismiss];
+    _ctxMenu = [GMContextMenu showIn:host source:src outgoing:[self outgoing:m] emojis:canReact ? [self pickerEmojis] : @[]
+                              chosen:mine items:items
+                               react:^(NSString *emoji) { [ws react:mid emoji:[emoji isEqual:mine] ? nil : emoji]; }
+                                more:canReact ? ^{ [ws showReactPickerFor:m]; } : nil];
+}
+
+- (void)debugMenuTap:(NSInteger)i {
+    [_ctxMenu debugTap:i];
 }
 
 - (void)longPress:(UILongPressGestureRecognizer *)g {
@@ -3818,13 +3908,13 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     c.fwd.hidden = fwd == nil;
     if (fwd) {
         c.fwd.text = fwdText;
-        c.fwd.textColor = out ? [GMTheme checkColor] : [GMTheme accent];
+        c.fwd.textColor = out ? [GMTheme bubbleTime:YES] : [GMTheme accent];
         c.fwd.frame = CGRectMake(cx, cy - 1, inner, kFwdH);
         cy += kFwdH;
     }
     c.replyBar.hidden = c.replyName.hidden = c.replyText.hidden = !hasReply;
     if (hasReply) {
-        UIColor *rc = out ? [GMTheme checkColor] : [GMTheme accent];
+        UIColor *rc = out ? [GMTheme bubbleTime:YES] : [GMTheme accent];
         c.replyBar.backgroundColor = rc;
         c.replyBar.frame = CGRectMake(cx, cy + 2, 2, kReplyH - 6);
         c.replyName.textColor = rc;
@@ -3887,7 +3977,7 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         c.docName.frame = CGRectMake(cx + 52, cy + 3, inner - 52, 19);
         c.docInfo.text = [GMVal(card, @"phone") length] ? [@"+" stringByAppendingString:[GMVal(card, @"phone") stringByReplacingOccurrencesOfString:@"+" withString:@""]]
                                                          : @"Không có số";
-        c.docInfo.textColor = out ? [GMTheme checkColor] : [GMTheme secondaryText];
+        c.docInfo.textColor = out ? [GMTheme bubbleTime:YES] : [GMTheme secondaryText];
         c.docInfo.frame = CGRectMake(cx + 52, cy + 23, inner - 52, 17);
         cy += kDocH + kDocTimeH;
     }
@@ -3896,11 +3986,11 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         NSString *name = [GMVal(d, @"name") length] ? GMVal(d, @"name") : @"Tệp";
         NSString *ext = name.pathExtension.length ? name.pathExtension.uppercaseString : @"TỆP";
         c.docIcon.text = ext.length > 4 ? [ext substringToIndex:4] : ext;
-        c.docIcon.backgroundColor = out ? [GMTheme checkColor] : [GMTheme accent];
+        c.docIcon.backgroundColor = out ? [GMTheme bubbleTime:YES] : [GMTheme accent];
         c.docIcon.frame = CGRectMake(cx, cy, 44, 44);
         c.docName.text = name;
         c.docName.frame = CGRectMake(cx + 52, cy + 3, inner - 52, 19);
-        c.docInfo.textColor = out ? [GMTheme checkColor] : [GMTheme secondaryText];
+        c.docInfo.textColor = out ? [GMTheme bubbleTime:YES] : [GMTheme secondaryText];
         c.docInfo.frame = CGRectMake(cx + 52, cy + 23, inner - 52, 17);
         cy += kDocH + (caption ? 4 : kDocTimeH);
     }
@@ -3912,21 +4002,21 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
         __weak GMChatViewController *wp = self;
         c.poll.vote = ^(NSArray *o) { [wp vote:o msg:mid]; };
         c.poll.toggle = ^(NSString *o) { [wp togglePollOption:o msg:mid]; };
-        [c.poll showPoll:poll selected:[_pollSel objectForKey:mid] tint:out ? [GMTheme checkColor] : [GMTheme accent]];
+        [c.poll showPoll:poll selected:[_pollSel objectForKey:mid] tint:out ? [GMTheme bubbleTime:YES] : [GMTheme accent]];
         cy += ph + 2;
     }
     [self refreshDoc:c];
     [self gifFor:c msg:m on:gif];
     c.play.hidden = c.wave.hidden = c.voiceTime.hidden = voice == nil;
     if (voice) {
-        UIColor *vc = out ? [GMTheme checkColor] : [GMTheme accent];
+        UIColor *vc = out ? [GMTheme bubbleTime:YES] : [GMTheme accent];
         c.play.backgroundColor = vc;
         c.play.frame = CGRectMake(cx, cy + 2, 40, 40);
         c.wave.played = vc;
         c.wave.rest = [vc colorWithAlphaComponent:0.3];
         c.wave.levels = GMVal(voice, @"waveform");
         c.wave.frame = CGRectMake(cx + 48, cy + 4, inner - 52, 22);
-        c.voiceTime.textColor = out ? [GMTheme checkColor] : [GMTheme secondaryText];
+        c.voiceTime.textColor = out ? [GMTheme bubbleTime:YES] : [GMTheme secondaryText];
         c.voiceTime.frame = CGRectMake(cx + 48, cy + 28, 60, 14);
         __weak GMChatViewController *ws = self;
         NSNumber *vid = GMVal(m, @"id");
@@ -3949,9 +4039,9 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     NSString *time = [self timeText:m];
     CGFloat tw = [time sizeWithFont:c.time.font].width;
     c.time.text = time;
-    c.time.textColor = out ? [GMTheme checkColor] : [GMTheme secondaryText];
+    c.time.textColor = out ? [GMTheme bubbleTime:YES] : [GMTheme secondaryText];
     c.time.frame = CGRectMake(cx + inner - tw, h - kPadY - 13 - rh, tw, 13);
-    [self fillChips:c msg:m tint:out ? [GMTheme checkColor] : [GMTheme accent] plain:NO
+    [self fillChips:c msg:m tint:out ? [GMTheme bubbleTime:YES] : [GMTheme accent] plain:NO
                  at:CGPointMake(cx, h - kPadY - chips.height) in:c.bubble];
     // Nút dưới tin của bot: ngay dưới bong bóng, rộng ít nhất ~260 điểm
     CGFloat aw = MAX(w - t, MIN([self maxBubbleW] - t, 260));

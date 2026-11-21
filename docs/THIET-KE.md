@@ -28,7 +28,7 @@ Tài liệu tham khảo (`Tai_Lieu/text.txt`):
 5. **Offline trước**: mọi màn đọc từ bộ nhớ đệm SQLite của lõi trước, mạng về thì lõi đẩy sự kiện cập nhật.
 6. **Proxy là tính năng bắt buộc ngay từ màn đăng nhập**. Ở Việt Nam, nhà mạng chặn Telegram lúc có lúc không, nên
    **MTProxy làm ngay từ đầu** (anh chốt 16/11/2026). Có thêm SOCKS5 và Shadowsocks, dùng lại từ lõi chung ChimToTV.
-7. **Không làm**: gọi thoại / video, chat bí mật, Stories, Mini App / WebApp của bot, thanh toán, Premium.
+7. **Không làm**: gọi video (gọi thoại 1-1 làm sau bản 1.5.0 — D38), chat bí mật, Stories, Mini App / WebApp của bot, thanh toán, Premium.
 
 ---
 

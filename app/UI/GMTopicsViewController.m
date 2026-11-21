@@ -253,7 +253,7 @@ static NSNumber *GMTopicOf(NSDictionary *m) {
     c.avatar.image = [GMTheme topicIcon:title color:[GMVal(t, @"color") integerValue] size:GMDialogAvatar];
     NSMutableString *name = [title mutableCopy];
     if ([GMVal(t, @"closed") boolValue]) [name appendString:@" 🔒"];
-    if ([GMVal(t, @"muted") boolValue]) [name appendString:@" 🔇"];
+    c.muted = [GMVal(t, @"muted") boolValue];
     c.name.text = name;
     c.time.text = [GMTheme shortTime:GMVal(last, @"date") ?: GMVal(t, @"date")];
     BOOL mine = [GMVal(last, @"out") boolValue] && ![GMVal(last, @"service") boolValue];

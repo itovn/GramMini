@@ -1,5 +1,6 @@
 #import "GMTheme.h"
 #import "GMLog.h"
+#import "GMCompat.h"
 #import <QuartzCore/QuartzCore.h>
 #import <CoreText/CoreText.h>
 #import <objc/runtime.h>
@@ -91,114 +92,115 @@ static UIColor *GMStripes(void) {
     return cache[i];
 }
 
-/// Nền thanh trên cao `h`: kính sáng bóng (nửa trên sáng hơn, gãy ở giữa như iOS 6), viền sáng mép trên, vạch đáy.
-static UIImage *GMNavBg(CGFloat h) {
-    BOOL dark = gDark;
-    UIImage *img = GMDraw(CGSizeMake(1, h), ^(CGContextRef ctx) {
-        NSArray *c = dark ? @[RGBA(0x4E5C6E, 0.84), RGBA(0x3A4656, 0.82), RGBA(0x2A3442, 0.84), RGBA(0x18202B, 0.9)]
-                          : @[RGBA(0xFFFFFF, 0.88), RGBA(0xEEF2F7, 0.74), RGBA(0xE2E9F1, 0.68), RGBA(0xD4DEE9, 0.7)];
-        CGFloat loc[] = {0, 0.5, 0.5, 1};
-        GMVGradient(ctx, CGRectMake(0, 0, 1, h), c, loc);
-        [(dark ? RGBA(0xFFFFFF, 0.2) : RGBA(0xFFFFFF, 0.95)) setFill];
-        CGContextFillRect(ctx, CGRectMake(0, 0, 1, 1));
-        [(dark ? RGBA(0x000000, 0.6) : RGBA(0x3C506A, 0.42)) setFill];
-        CGContextFillRect(ctx, CGRectMake(0, h - 1, 1, 1));
-    });
-    return [img resizableImageWithCapInsets:UIEdgeInsetsZero];
+#pragma mark - Kính lỏng (D37)
+
+/// Màu nền trang: trơn (danh sách) hay nhóm (Cài đặt…).
+static UIColor *GMPage(BOOL grouped) {
+    if (gDark) return RGB(0x000000);
+    return grouped ? RGB(0xF2F2F7) : RGB(0xFFFFFF);
 }
 
-/// Nút thanh trên kiểu iOS 6: viền nổi bo góc (hoặc hình mũi tên cho nút quay lại), mặt kính bóng, ấn thì tối lại.
-static UIImage *GMBarButtonBg(CGFloat h, BOOL pressed, BOOL back) {
+/// Vẽ một viên kính vào khung `g`: bóng đổ mềm phía dưới (không lọt vào trong), mặt bán trong, vệt sáng nửa trên, viền sáng
+/// mép trên, viền mảnh 0,5 pt. iOS 5 / 6 không làm mờ được thời gian thực: kính nằm trên nền tĩnh (trang trơn / hình nền), mặt bán
+/// trong để lộ màu nền như kính mờ thật.
+static void GMGlassDraw(CGContextRef ctx, CGRect g, CGFloat r, BOOL pressed, BOOL shadow) {
     BOOL dark = gDark;
-    const CGFloat r = 5, tip = back ? 11 : 0, w = tip + 2 * r + 3;
-    UIImage *img = GMDraw(CGSizeMake(w, h), ^(CGContextRef ctx) {
-        CGRect b = CGRectMake(0.5, 0.5, w - 1, h - 2);
-        UIBezierPath *(^shape)(CGRect) = ^UIBezierPath *(CGRect f) {
-            if (!back) return [UIBezierPath bezierPathWithRoundedRect:f cornerRadius:r];
-            CGFloat minX = CGRectGetMinX(f), maxX = CGRectGetMaxX(f), minY = CGRectGetMinY(f), maxY = CGRectGetMaxY(f);
-            UIBezierPath *p = [UIBezierPath bezierPath];
-            [p moveToPoint:CGPointMake(minX + tip, minY)];
-            [p addLineToPoint:CGPointMake(maxX - r, minY)];
-            [p addArcWithCenter:CGPointMake(maxX - r, minY + r) radius:r startAngle:-M_PI_2 endAngle:0 clockwise:YES];
-            [p addLineToPoint:CGPointMake(maxX, maxY - r)];
-            [p addArcWithCenter:CGPointMake(maxX - r, maxY - r) radius:r startAngle:0 endAngle:M_PI_2 clockwise:YES];
-            [p addLineToPoint:CGPointMake(minX + tip, maxY)];
-            [p addLineToPoint:CGPointMake(minX + 1, CGRectGetMidY(f) + 1)];
-            [p addQuadCurveToPoint:CGPointMake(minX + 1, CGRectGetMidY(f) - 1) controlPoint:CGPointMake(minX, CGRectGetMidY(f))];
-            [p closePath];
-            return p;
-        };
-        // Viền sáng dưới đáy (nút như khắc vào thanh)
-        [(dark ? RGBA(0xFFFFFF, 0.08) : RGBA(0xFFFFFF, 0.55)) setFill];
-        [shape(CGRectOffset(b, 0, 1)) fill];
-        UIBezierPath *p = shape(b);
-        NSArray *c = dark ? (pressed ? @[RGBA(0x354152, 0.95), RGBA(0x1C2530, 0.95)] : @[RGBA(0x5D6D80, 0.9), RGBA(0x2A3644, 0.9)])
-                          : (pressed ? @[RGBA(0xC4D1E0, 0.95), RGBA(0xAEBED1, 0.95)] : @[RGBA(0xFFFFFF, 0.9), RGBA(0xE0E8F1, 0.78)]);
-        GMFillGradient(ctx, p, b, c, NULL);
-        if (!pressed) {
-            CGContextSaveGState(ctx);
-            [p addClip];
-            [(dark ? RGBA(0xFFFFFF, 0.2) : RGBA(0xFFFFFF, 0.95)) setFill];
-            CGContextFillRect(ctx, CGRectMake(0, 1.5, w, 1));
-            CGContextRestoreGState(ctx);
-        }
-        [(dark ? RGBA(0x000000, 0.65) : RGBA(0x3C5573, 0.42)) setStroke];
-        p.lineWidth = 1;
-        [p stroke];
-    });
-    return [img resizableImageWithCapInsets:UIEdgeInsetsMake(0, tip + r + 1, 0, r + 1)];
-}
-
-/// Ô nhập bo tròn lõm: bóng trong ở mép trên, viền sáng dưới đáy. `r` bán kính, `a` độ đục của mặt ô.
-static UIImage *GMField(CGFloat r, CGFloat a) {
-    BOOL dark = gDark;
-    const CGFloat w = 2 * r + 1, h = 2 * r + 2;
-    UIImage *img = GMDraw(CGSizeMake(w, h), ^(CGContextRef ctx) {
-        CGRect b = CGRectMake(0.5, 0.5, w - 1, h - 2);
-        [(dark ? RGBA(0xFFFFFF, 0.08) : RGBA(0xFFFFFF, 0.85)) setFill];
-        [[UIBezierPath bezierPathWithRoundedRect:CGRectOffset(b, 0, 1) cornerRadius:r] fill];
-        UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:b cornerRadius:r];
-        [(dark ? RGBA(0x0E1621, MAX(a, 0.88)) : RGBA(0xFFFFFF, a)) setFill];
+    UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:g cornerRadius:r];
+    if (shadow) {
+        CGContextSaveGState(ctx);
+        CGContextSetShadowWithColor(ctx, CGSizeMake(0, 1), 3, (dark ? RGBA(0x000000, 0.6) : RGBA(0x000000, 0.16)).CGColor);
+        [[UIColor blackColor] setFill];
         [p fill];
-        CGContextSaveGState(ctx);
-        [p addClip];
-        GMVGradient(ctx, CGRectMake(0, 0, w, 4), @[dark ? RGBA(0x000000, 0.55) : RGBA(0x1E3250, 0.22), RGBA(0x000000, 0)], NULL);
         CGContextRestoreGState(ctx);
-        [(dark ? RGBA(0x000000, 0.7) : RGBA(0x324664, 0.4)) setStroke];
-        p.lineWidth = 1;
-        [p stroke];
-    });
-    return [img resizableImageWithCapInsets:UIEdgeInsetsMake(r, r, r + 1, r)];
+        CGContextSaveGState(ctx);
+        CGContextSetBlendMode(ctx, kCGBlendModeClear);
+        [p fill];
+        CGContextRestoreGState(ctx);
+    }
+    UIColor *fill = dark ? (pressed ? RGBA(0x4A4A50, 0.9) : RGBA(0x2C2C30, 0.78))
+                         : (pressed ? RGBA(0xDADADF, 0.92) : RGBA(0xFFFFFF, 0.8));
+    [fill setFill];
+    [p fill];
+    CGContextSaveGState(ctx);
+    [p addClip];
+    GMVGradient(ctx, CGRectMake(g.origin.x, g.origin.y, g.size.width, g.size.height * 0.55),
+                @[RGBA(0xFFFFFF, dark ? 0.1 : 0.55), RGBA(0xFFFFFF, 0)], NULL);
+    // Viền sáng mép trên (ánh sáng chiếu từ trên)
+    UIBezierPath *in = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(g, 0.5, 0.5) cornerRadius:MAX(0, r - 0.5)];
+    in.lineWidth = 1;
+    CGContextClipToRect(ctx, CGRectMake(g.origin.x, g.origin.y, g.size.width, MIN(g.size.height * 0.45, r)));
+    [(dark ? RGBA(0xFFFFFF, 0.2) : RGBA(0xFFFFFF, 0.95)) setStroke];
+    [in stroke];
+    CGContextRestoreGState(ctx);
+    UIBezierPath *edge = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(g, 0.25, 0.25) cornerRadius:MAX(0, r - 0.25)];
+    edge.lineWidth = 0.5;
+    [(dark ? RGBA(0xFFFFFF, 0.14) : RGBA(0x000000, 0.07)) setStroke];
+    [edge stroke];
 }
 
-/// Thanh dưới (thanh mục): kính khói bóng, cả hai chế độ.
-static UIImage *GMTabBg(void) {
-    UIImage *img = GMDraw(CGSizeMake(1, 49), ^(CGContextRef ctx) {
-        NSArray *c = @[RGBA(0x404C5C, 0.86), RGBA(0x2C3744, 0.86), RGBA(0x202934, 0.9), RGBA(0x161D26, 0.93)];
-        CGFloat loc[] = {0, 0.5, 0.5, 1};
-        GMVGradient(ctx, CGRectMake(0, 0, 1, 49), c, loc);
-        [RGBA(0x000000, 0.55) setFill];
-        CGContextFillRect(ctx, CGRectMake(0, 0, 1, 1));
-        [RGBA(0xFFFFFF, 0.2) setFill];
-        CGContextFillRect(ctx, CGRectMake(0, 1, 1, 1));
+/// Ảnh viên kính co giãn: cao `h` (gồm lề: trên `mt`, dưới `mb` cho bóng, hai bên `mx`), bán kính `r`; `chevron` vẽ mũi tên quay
+/// lại ở đầu trái (nút quay lại). Mặt kính cao h - mt - mb (≥ 2r — giãn được theo chiều dọc khi cao hơn).
+static UIImage *GMGlassImage(CGFloat h, CGFloat r, CGFloat mx, CGFloat mt, CGFloat mb, BOOL pressed, BOOL chevron) {
+    static NSMutableDictionary *cache;
+    if (!cache) cache = [NSMutableDictionary dictionary];
+    NSString *key = [NSString stringWithFormat:@"%d|%.1f|%.1f|%.1f|%.1f|%.1f|%d|%d", gDark, h, r, mx, mt, mb, pressed, chevron];
+    UIImage *img = [cache objectForKey:key];
+    if (img) return img;
+    const CGFloat lead = chevron ? 22 : 0, w = 2 * (mx + r) + lead + 1;
+    BOOL dark = gDark;
+    img = GMDraw(CGSizeMake(w, h), ^(CGContextRef ctx) {
+        CGRect g = CGRectMake(mx, mt, w - 2 * mx, h - mt - mb);
+        GMGlassDraw(ctx, g, r, pressed, YES);
+        if (chevron) {
+            CGFloat cy = CGRectGetMidY(g), cx = mx + 10;
+            CGContextSetLineWidth(ctx, 2.2);
+            CGContextSetLineCap(ctx, kCGLineCapRound);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            [(dark ? RGB(0xFFFFFF) : RGB(0x000000)) setStroke];
+            CGContextMoveToPoint(ctx, cx + 5.5, cy - 7);
+            CGContextAddLineToPoint(ctx, cx - 1.5, cy);
+            CGContextAddLineToPoint(ctx, cx + 5.5, cy + 7);
+            CGContextStrokePath(ctx);
+        }
+    });
+    CGFloat capV = MIN(r, floor((h - mt - mb - 1) / 2));
+    img = [img resizableImageWithCapInsets:UIEdgeInsetsMake(mt + capV, mx + r + lead, mb + capV, mx + r)];
+    [cache setObject:img forKey:key];
+    return img;
+}
+
+/// Dải mờ dần (thay «scroll edge effect» của iOS 26): màu `c` đặc ở mép `fromTop` (trên / dưới), trong suốt ở mép kia, cao `h`.
+static UIImage *GMFade(UIColor *c, CGFloat h, BOOL fromTop) {
+    UIImage *img = GMDraw(CGSizeMake(1, h), ^(CGContextRef ctx) {
+        NSMutableArray *cols = [NSMutableArray array];
+        CGFloat locs[5];
+        for (int i = 0; i < 5; i++) {
+            CGFloat t = i / 4.0;
+            CGFloat a = (1 - t) * (1 - t);  // tan nhanh ở đầu dải
+            [cols addObject:[c colorWithAlphaComponent:a]];
+            locs[i] = t;
+        }
+        if (!fromTop) {
+            cols = [[[cols reverseObjectEnumerator] allObjects] mutableCopy];
+        }
+        GMVGradient(ctx, CGRectMake(0, 0, 1, h), cols, locs);
     });
     return [img resizableImageWithCapInsets:UIEdgeInsetsZero];
 }
 
-/// Ô sáng sau mục đang chọn của thanh dưới.
+/// Nền thanh dưới: viên kính nổi cách mép 8 pt, cao 44 trong thanh 49 (hai bên trong suốt — lộ màu trang).
+static UIImage *GMTabBg(void) {
+    const CGFloat mx = 8, mt = 2, r = 22, h = 49;
+    return GMGlassImage(h, r, mx, mt, h - mt - 2 * r - 1, NO, NO);
+}
+
+/// Viên sáng sau mục đang chọn của thanh dưới (lồng trong viên kính, cách 3 pt).
 static UIImage *GMTabSelection(void) {
-    const CGFloat w = 80, h = 43;
+    const CGFloat w = 84, h = 49;
+    BOOL dark = gDark;
     return GMDraw(CGSizeMake(w, h), ^(CGContextRef ctx) {
-        UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0.5, 3.5, w - 1, h - 5) cornerRadius:6];
-        GMFillGradient(ctx, p, CGRectMake(0, 3, w, h - 4), @[RGBA(0xFFFFFF, 0.24), RGBA(0xFFFFFF, 0.06)], NULL);
-        CGContextSaveGState(ctx);
-        [p addClip];
-        [RGBA(0xFFFFFF, 0.3) setFill];
-        CGContextFillRect(ctx, CGRectMake(0, 4, w, 1));
-        CGContextRestoreGState(ctx);
-        [RGBA(0x000000, 0.35) setStroke];
-        p.lineWidth = 1;
-        [p stroke];
+        [(dark ? RGBA(0xFFFFFF, 0.14) : RGBA(0x000000, 0.075)) setFill];
+        [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 5, w, 39) cornerRadius:19.5] fill];
     });
 }
 
@@ -266,6 +268,17 @@ static UIImage *GMTabSelection(void) {
 
 @end
 
+@interface UIViewController (GMBack)
+- (void)gmBack;
+@end
+
+@implementation UIViewController (GMBack)
+/// Nút quay lại viên kính (GMTheme styleBarsFor:).
+- (void)gmBack {
+    [self.navigationController popViewControllerAnimated:YES];
+}
+@end
+
 @implementation GMTheme
 
 + (NSInteger)mode {
@@ -293,31 +306,37 @@ static UIImage *GMTabSelection(void) {
     return m == GMThemeDark ? @"Tối" : m == GMThemeAuto ? @"Tự động" : @"Sáng";
 }
 
-+ (UIColor *)accent { return gDark ? RGB(0x5EAEF0) : RGB(0x2481CC); }
-+ (UIColor *)background { return gDark ? RGB(0x18222D) : RGB(0xEFEFF4); }
-+ (UIColor *)chatBackground { return gDark ? RGB(0x0E1621) : RGB(0xD6E2EB); }
-+ (UIColor *)secondaryText { return gDark ? RGB(0x8494A4) : RGB(0x6E7B88); }
-+ (UIColor *)separator { return gDark ? RGB(0x0F161E) : RGB(0xC8C7CC); }
-+ (UIColor *)checkColor { return gDark ? RGB(0x6AB3F3) : RGB(0x3FA34D); }
-+ (UIColor *)mutedBadge { return gDark ? RGB(0x4E5A66) : RGB(0xB6B6BB); }
-+ (UIColor *)text { return gDark ? RGB(0xF2F4F6) : RGB(0x1C2A38); }
-+ (UIColor *)cellBackground { return gDark ? RGB(0x1D2733) : [UIColor whiteColor]; }
-+ (UIColor *)barBackground { return gDark ? RGB(0x17212B) : [UIColor colorWithWhite:0.97 alpha:1]; }
-+ (UIColor *)fieldBackground { return gDark ? RGB(0x242F3D) : [UIColor whiteColor]; }
-+ (UIColor *)placeholderFill { return gDark ? RGB(0x2B3A4A) : [UIColor colorWithWhite:0.88 alpha:1]; }
-+ (UIColor *)pillBackground { return gDark ? RGBA(0x14202C, 0.62) : RGBA(0x46607A, 0.5); }
-+ (UIColor *)selectedCell { return gDark ? RGB(0x2A3846) : [UIColor colorWithWhite:0.85 alpha:1]; }
+// Bảng màu D37 (theo bản mẫu anh duyệt): trang trơn trắng / đen, chữ phụ đủ tương phản 4,5:1.
++ (UIColor *)accent { return gDark ? RGB(0x4DA3FF) : RGB(0x0B6BDB); }
++ (UIColor *)background { return GMPage(NO); }
++ (UIColor *)groupedBackground { return GMPage(YES); }
++ (UIColor *)chatBackground { return gDark ? RGB(0x0D1420) : RGB(0xD9E6EC); }
++ (UIColor *)secondaryText { return gDark ? RGB(0x9A9AA1) : RGB(0x6C6C70); }
++ (UIColor *)separator { return gDark ? RGB(0x38383A) : RGB(0xD1D1D6); }
++ (UIColor *)checkColor { return [self accent]; }
++ (UIColor *)badgeColor { return gDark ? RGB(0x2F6FD6) : RGB(0x0B6BDB); }
++ (UIColor *)mutedBadge { return gDark ? RGB(0x5C5C62) : RGB(0x77777D); }
++ (UIColor *)text { return gDark ? RGB(0xFFFFFF) : RGB(0x000000); }
++ (UIColor *)cellBackground { return gDark ? RGB(0x1C1C1E) : RGB(0xFFFFFF); }
++ (UIColor *)barBackground { return gDark ? RGB(0x1C1C1E) : RGB(0xF9F9F9); }
++ (UIColor *)fieldBackground { return gDark ? RGB(0x1C1C1E) : RGB(0xEEEEEF); }
++ (UIColor *)placeholderFill { return gDark ? RGB(0x2C2C2E) : RGB(0xE5E5EA); }
++ (UIColor *)pillBackground { return gDark ? RGBA(0x26262A, 0.72) : RGBA(0xFFFFFF, 0.72); }
++ (UIColor *)pillText { return gDark ? RGB(0xFFFFFF) : RGB(0x000000); }
++ (UIColor *)selectedCell { return gDark ? RGB(0x2C2C2E) : RGB(0xE5E5EA); }
 + (UIKeyboardAppearance)keyboard { return gDark ? UIKeyboardAppearanceAlert : UIKeyboardAppearanceDefault; }
-+ (UIColor *)glassFill { return gDark ? RGBA(0x1E2C3B, 0.82) : RGBA(0xFFFFFF, 0.68); }
-+ (UIColor *)glassGrouped { return gDark ? RGBA(0x1E2C3B, 0.86) : RGBA(0xFFFFFF, 0.76); }
-+ (UIColor *)glassLine { return gDark ? RGBA(0x000000, 0.4) : RGBA(0x5A6E87, 0.25); }
-+ (UIColor *)barText { return gDark ? RGB(0xE6EDF4) : RGB(0x2F5F93); }
-+ (UIColor *)navTitle { return gDark ? RGB(0xF2F4F6) : RGB(0x3A4A5E); }
-+ (UIColor *)navTitleShadow { return gDark ? RGBA(0x000000, 0.6) : RGBA(0xFFFFFF, 0.95); }
-+ (CGSize)navShadowOffset { return gDark ? CGSizeMake(0, -1) : CGSizeMake(0, 1); }
+// Ô bảng: không còn kính trên hình nền (D37) — mặt ô trơn theo trang
++ (UIColor *)glassFill { return gDark ? RGB(0x000000) : RGB(0xFFFFFF); }
++ (UIColor *)glassGrouped { return [self cellBackground]; }
++ (UIColor *)glassLine { return [self separator]; }
++ (UIColor *)barText { return [self text]; }
++ (UIColor *)navTitle { return [self text]; }
++ (UIColor *)navTitleShadow { return [UIColor clearColor]; }
++ (CGSize)navShadowOffset { return CGSizeZero; }
++ (UIColor *)bubbleTime:(BOOL)outgoing { return outgoing ? (gDark ? RGB(0xC9DDF5) : RGB(0x3D7B3D)) : [self secondaryText]; }
 
 + (UIColor *)colorFor:(NSString *)peer {
-    static int palette[] = {0xE17076, 0xFAA774, 0xA695E7, 0x7BC862, 0x6EC9CB, 0x65AADD, 0xEE7AAE};
+    static int palette[] = {0xE5484D, 0xF0624D, 0x8E5BE8, 0x34A853, 0x1FA597, 0x3A8DDE, 0xE0538F};
     long long v = llabs(peer.longLongValue);
     return RGB(palette[v % 7]);
 }
@@ -335,7 +354,7 @@ static UIImage *GMTabSelection(void) {
     // Vẽ mất ~0,4–0,6 s trên iPad (A4 / A5) → lưu JPEG, lần sau chỉ đọc (đổi cách vẽ thì tăng số «v»)
     NSString *dir = [GMDataDir() stringByAppendingPathComponent:@"ui"];
     NSString *path = [dir stringByAppendingPathComponent:
-                              [NSString stringWithFormat:@"wallpaper-v1-%@-%.0f-%.0fx.jpg", dark ? @"dark" : @"light", S, scale]];
+                              [NSString stringWithFormat:@"wallpaper-v2-%@-%.0f-%.0fx.jpg", dark ? @"dark" : @"light", S, scale]];
     UIImage *saved = [UIImage imageWithData:[NSData dataWithContentsOfFile:path]];
     if (saved.CGImage) {
         cache[i] = [UIImage imageWithCGImage:saved.CGImage scale:scale orientation:UIImageOrientationUp];
@@ -343,28 +362,21 @@ static UIImage *GMTabSelection(void) {
     }
     long long t0 = (long long)([[NSDate date] timeIntervalSince1970] * 1000);
     cache[i] = GMDraw(CGSizeMake(S, S), ^(CGContextRef ctx) {
-        [(dark ? RGB(0x0F1824) : RGB(0xC3D3E1)) setFill];
+        // D37: bốn vùng màu loang mềm (sáng: lục bạc hà / lam / tím nhạt / ngọc; tối: lục lam / chàm / tím / ngọc đậm), không vân
+        [(dark ? RGB(0x0D1420) : RGB(0xD9E6EC)) setFill];
         CGContextFillRect(ctx, CGRectMake(0, 0, S, S));
-        CGFloat R = 0.5 * S;
+        CGFloat R = 0.55 * S;
         if (dark) {
-            GMBlob(ctx, CGPointMake(0.2 * W, 0.18 * S), R, 0x3C5FAA, 0.6);
-            GMBlob(ctx, CGPointMake(0.86 * W, 0.5 * S), R, 0x7346A0, 0.45);
-            GMBlob(ctx, CGPointMake(0.26 * W, 0.86 * S), R, 0x237D7D, 0.42);
-            GMBlob(ctx, CGPointMake(0.92 * S, 0.14 * S), R, 0x325096, 0.4);
+            GMBlob(ctx, CGPointMake(0.08 * W, 0.12 * S), R, 0x1B4A4A, 0.85);
+            GMBlob(ctx, CGPointMake(0.96 * W, 0.32 * S), R, 0x1F2C60, 0.85);
+            GMBlob(ctx, CGPointMake(0.22 * W, 0.92 * S), R, 0x382456, 0.85);
+            GMBlob(ctx, CGPointMake(0.92 * S, 0.88 * S), R, 0x124440, 0.8);
         } else {
-            GMBlob(ctx, CGPointMake(0.18 * W, 0.14 * S), R, 0xFFD696, 0.6);
-            GMBlob(ctx, CGPointMake(0.88 * W, 0.42 * S), R, 0x78B2EE, 0.62);
-            GMBlob(ctx, CGPointMake(0.25 * W, 0.86 * S), R, 0x96DAB6, 0.58);
-            GMBlob(ctx, CGPointMake(0.92 * S, 0.12 * S), R, 0xB4AAEB, 0.42);
+            GMBlob(ctx, CGPointMake(0.08 * W, 0.12 * S), R, 0xBFE3C9, 0.95);
+            GMBlob(ctx, CGPointMake(0.96 * W, 0.32 * S), R, 0xBBD3F4, 0.95);
+            GMBlob(ctx, CGPointMake(0.22 * W, 0.92 * S), R, 0xDCCDF2, 0.95);
+            GMBlob(ctx, CGPointMake(0.92 * S, 0.88 * S), R, 0xC3EBDF, 0.9);
         }
-        // Vân chéo mảnh (chất liệu kiểu iOS 6)
-        CGContextSetLineWidth(ctx, 1);
-        [(dark ? RGBA(0xFFFFFF, 0.025) : RGBA(0xFFFFFF, 0.08)) setStroke];
-        for (CGFloat k = -S; k < S; k += 4) {
-            CGContextMoveToPoint(ctx, k, S);
-            CGContextAddLineToPoint(ctx, k + S, 0);
-        }
-        CGContextStrokePath(ctx);
     });
     GMLog(@"hình nền %.0fx%.0f (%@): vẽ %lld ms", S, S, dark ? @"tối" : @"sáng", (long long)([[NSDate date] timeIntervalSince1970] * 1000) - t0);
     [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:NULL];
@@ -380,6 +392,24 @@ static UIImage *GMCircleIcon(UIColor *color, NSString *ini, CGFloat size);
     NSString *key = [NSString stringWithFormat:@"%@|%@|%.0f", peer, name, size];
     UIImage *img = [cache objectForKey:key];
     if (img) return img;
+    if ([name isEqual:@"★"]) {
+        // Tin nhắn đã lưu (chỗ gọi truyền «★»): dấu trang trắng trên tròn xanh như Telegram
+        img = GMDraw(CGSizeMake(size, size), ^(CGContextRef ctx) {
+            UIBezierPath *circle = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(0, 0, size, size)];
+            GMFillGradient(ctx, circle, CGRectMake(0, 0, size, size), @[RGB(0x5AB0FF), RGB(0x2A7BE4)], NULL);
+            CGFloat u = size / 54.0;
+            [[UIColor whiteColor] setFill];
+            CGContextMoveToPoint(ctx, 19 * u, 15 * u);
+            CGContextAddLineToPoint(ctx, 35 * u, 15 * u);
+            CGContextAddLineToPoint(ctx, 35 * u, 40 * u);
+            CGContextAddLineToPoint(ctx, 27 * u, 34 * u);
+            CGContextAddLineToPoint(ctx, 19 * u, 40 * u);
+            CGContextClosePath(ctx);
+            CGContextFillPath(ctx);
+        });
+        [cache setObject:img forKey:key];
+        return img;
+    }
     // Chữ cái đầu của hai từ đầu (bỏ biểu tượng / dấu)
     NSMutableString *ini = [NSMutableString string];
     for (NSString *w in [name componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]) {
@@ -399,20 +429,15 @@ static UIImage *GMCircleIcon(UIColor *color, NSString *ini, CGFloat size);
 /// Vòng tròn màu kiểu kính (bóng nửa trên, tối nhẹ phía đáy) + chữ trắng ở giữa — ảnh chữ cái, biểu tượng chủ đề.
 static UIImage *GMCircleIcon(UIColor *color, NSString *ini, CGFloat size) {
     return GMDraw(CGSizeMake(size, size), ^(CGContextRef ctx) {
+        // D37: tròn phẳng, dải màu dọc nhạt dần lên trên (như ảnh chữ cái của Telegram), chữ trắng không bóng
         UIBezierPath *circle = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(0, 0, size, size)];
-        [color setFill];
-        [circle fill];
-        // Bóng kính nửa trên + tối nhẹ phía đáy
-        CGContextSaveGState(ctx);
-        [circle addClip];
-        GMVGradient(ctx, CGRectMake(0, 0, size, size / 2), @[RGBA(0xFFFFFF, 0.5), RGBA(0xFFFFFF, 0.08)], NULL);
-        GMVGradient(ctx, CGRectMake(0, size * 0.6, size, size * 0.4), @[RGBA(0x000000, 0), RGBA(0x000000, 0.14)], NULL);
-        CGContextRestoreGState(ctx);
+        CGFloat r = 0, g = 0, b = 0, a = 1;
+        if (![color getRed:&r green:&g blue:&b alpha:&a]) [color getWhite:&r alpha:&a], g = b = r;
+        UIColor *top = [UIColor colorWithRed:r + (1 - r) * 0.3 green:g + (1 - g) * 0.3 blue:b + (1 - b) * 0.3 alpha:1];
+        GMFillGradient(ctx, circle, CGRectMake(0, 0, size, size), @[top, color], NULL);
         UIFont *f = [UIFont boldSystemFontOfSize:floor(size * 0.38)];
         CGSize ts = [ini sizeWithFont:f];
         CGPoint at = CGPointMake(floor((size - ts.width) / 2), floor((size - ts.height) / 2));
-        [RGBA(0x000000, 0.25) set];
-        [ini drawAtPoint:CGPointMake(at.x, at.y - 1) withFont:f];
         [[UIColor whiteColor] set];
         [ini drawAtPoint:at withFont:f];
     });
@@ -444,38 +469,29 @@ static UIImage *GMCircleIcon(UIColor *color, NSString *ini, CGFloat size) {
     return 6;
 }
 
-/// Bong bóng kính bóng: góc bo 15, đuôi cong ở góc dưới phía người gửi; mặt dải màu, vệt bóng nằm trong phần mũ trên (không bị
-/// kéo giãn). Ảnh 2 × bán kính + đuôi, co giãn phần giữa.
+/// Bong bóng phẳng (D37): bo góc 16, đuôi cong ở góc dưới phía người gửi, một màu (vào: trắng / xám đậm; ra: lục nhạt / lam đậm),
+/// bóng mảnh 1 pt phía dưới. Ảnh 2 × bán kính + đuôi, co giãn phần giữa.
 + (UIImage *)bubbleOut:(BOOL)outgoing tail:(BOOL)tail {
     static UIImage *cache[8];
     int idx = (gDark ? 4 : 0) + (outgoing ? 2 : 0) + (tail ? 1 : 0);
     if (cache[idx]) return cache[idx];
-    const CGFloat r = 15, t = [self tailWidth], w = 2 * r + t + 2, h = 2 * r + 2;
-    NSArray *fill;
-    UIColor *stroke, *gloss;
-    if (gDark) {
-        fill = outgoing ? @[RGBA(0x3A6EA0, 0.95), RGBA(0x244E7A, 0.95)] : @[RGBA(0x22323F, 0.9), RGBA(0x1A2733, 0.9)];
-        stroke = outgoing ? RGBA(0x78AFE6, 0.4) : RGBA(0xFFFFFF, 0.1);
-        gloss = RGBA(0xFFFFFF, outgoing ? 0.2 : 0.12);
-    } else {
-        fill = outgoing ? @[RGBA(0xEEFFDA, 0.97), RGBA(0xC8EFA4, 0.95)] : @[RGBA(0xFFFFFF, 0.93), RGBA(0xF2F6FA, 0.88)];
-        stroke = outgoing ? RGBA(0x7FB563, 0.8) : RGBA(0x8DA0B4, 0.62);
-        gloss = RGBA(0xFFFFFF, 0.7);
-    }
+    const CGFloat r = 16, t = [self tailWidth], w = 2 * r + t + 2, h = 2 * r + 3;
+    UIColor *fill = gDark ? (outgoing ? RGB(0x2B5A91) : RGB(0x232327)) : (outgoing ? RGB(0xDDF6C8) : RGB(0xFFFFFF));
+    UIColor *shade = gDark ? RGBA(0x000000, 0.35) : RGBA(0x000000, 0.1);
     UIImage *img = GMDraw(CGSizeMake(w, h), ^(CGContextRef ctx) {
         // Vẽ cho tin ra (đuôi bên phải); tin vào thì lật ngang
         if (!outgoing) {
             CGContextTranslateCTM(ctx, w, 0);
             CGContextScaleCTM(ctx, -1, 1);
         }
-        CGRect b = CGRectMake(0.5, 0.5, w - t - 1, h - 1);
+        CGRect b = CGRectMake(0, 0, w - t, h - 1);
         CGMutablePathRef p = CGPathCreateMutable();
         CGFloat minX = CGRectGetMinX(b), maxX = CGRectGetMaxX(b), minY = CGRectGetMinY(b), maxY = CGRectGetMaxY(b);
         CGPathMoveToPoint(p, NULL, minX + r, minY);
         CGPathAddArcToPoint(p, NULL, maxX, minY, maxX, minY + r, r);
         if (tail) {
             CGPathAddLineToPoint(p, NULL, maxX, maxY - 8);
-            CGPathAddQuadCurveToPoint(p, NULL, maxX + 1, maxY - 1, maxX + t + 0.5, maxY);
+            CGPathAddQuadCurveToPoint(p, NULL, maxX + 1, maxY - 1, maxX + t, maxY);
             CGPathAddQuadCurveToPoint(p, NULL, maxX - 4, maxY + 0.5, maxX - 9, maxY - 3);
             CGPathAddQuadCurveToPoint(p, NULL, maxX - 12, maxY, maxX - r, maxY);
         } else {
@@ -484,164 +500,184 @@ static UIImage *GMCircleIcon(UIColor *color, NSString *ini, CGFloat size) {
         CGPathAddArcToPoint(p, NULL, minX, maxY, minX, maxY - r, r);
         CGPathAddArcToPoint(p, NULL, minX, minY, minX + r, minY, r);
         CGPathCloseSubpath(p);
+        // Bóng mảnh: chính hình bong bóng lệch xuống 1 pt
         CGContextSaveGState(ctx);
+        CGContextTranslateCTM(ctx, 0, 1);
         CGContextAddPath(ctx, p);
-        CGContextClip(ctx);
-        GMVGradient(ctx, CGRectMake(0, 0, w, h), fill, NULL);
-        GMVGradient(ctx, CGRectMake(0, 1, w, r - 2), @[gloss, RGBA(0xFFFFFF, 0)], NULL);
+        [shade setFill];
+        CGContextFillPath(ctx);
         CGContextRestoreGState(ctx);
         CGContextAddPath(ctx, p);
-        [stroke setStroke];
-        CGContextSetLineWidth(ctx, 1);
-        CGContextStrokePath(ctx);
+        [fill setFill];
+        CGContextFillPath(ctx);
         CGPathRelease(p);
     });
-    UIEdgeInsets caps = outgoing ? UIEdgeInsetsMake(r, r, r, r + t + 1) : UIEdgeInsetsMake(r, r + t + 1, r, r);
+    UIEdgeInsets caps = outgoing ? UIEdgeInsetsMake(r, r, r + 1, r + t + 1) : UIEdgeInsetsMake(r, r + t + 1, r + 1, r);
     cache[idx] = [img resizableImageWithCapInsets:caps];
     return cache[idx];
 }
 
+/// Nền thanh phụ (khung trả lời, tin ghim, đang gửi tệp, bảng sticker…): mặt gần đặc theo trang, vạch mảnh mép trên.
 + (UIImage *)glassBar {
     static UIImage *cache[2];
     int i = gDark ? 1 : 0;
     if (cache[i]) return cache[i];
     BOOL dark = gDark;
-    UIImage *img = GMDraw(CGSizeMake(1, 48), ^(CGContextRef ctx) {
-        GMVGradient(ctx, CGRectMake(0, 0, 1, 48), dark ? @[RGBA(0x343F4E, 0.88), RGBA(0x18202B, 0.92)]
-                                                       : @[RGBA(0xFAFCFF, 0.88), RGBA(0xD8E1EB, 0.84)], NULL);
-        [(dark ? RGBA(0x000000, 0.6) : RGBA(0x50647D, 0.38)) setFill];
-        CGContextFillRect(ctx, CGRectMake(0, 0, 1, 1));
-        [(dark ? RGBA(0xFFFFFF, 0.14) : RGBA(0xFFFFFF, 0.95)) setFill];
-        CGContextFillRect(ctx, CGRectMake(0, 1, 1, 1));
+    UIImage *img = GMDraw(CGSizeMake(1, 8), ^(CGContextRef ctx) {
+        [(dark ? RGBA(0x1C1C1E, 0.95) : RGBA(0xF9F9F9, 0.95)) setFill];
+        CGContextFillRect(ctx, CGRectMake(0, 0, 1, 8));
+        [(dark ? RGBA(0xFFFFFF, 0.12) : RGBA(0x000000, 0.12)) setFill];
+        CGContextFillRect(ctx, CGRectMake(0, 0, 1, 0.5));
     });
-    cache[i] = [img resizableImageWithCapInsets:UIEdgeInsetsMake(3, 0, 3, 0)];
+    cache[i] = [img resizableImageWithCapInsets:UIEdgeInsetsMake(2, 0, 2, 0)];
     return cache[i];
 }
 
+/// Ô nhập tin: viên kính (không bóng — khung ô cắt mép), bo tròn 18 (một dòng = viên thuốc), giãn theo số dòng.
 + (UIImage *)fieldImage {
     static UIImage *cache[2];
     int i = gDark ? 1 : 0;
-    if (!cache[i]) cache[i] = GMField(16, 0.95);
+    if (cache[i]) return cache[i];
+    const CGFloat r = 18, w = 2 * r + 1, h = 2 * r + 1;
+    UIImage *img = GMDraw(CGSizeMake(w, h), ^(CGContextRef ctx) {
+        GMGlassDraw(ctx, CGRectMake(0, 0, w, h), r, NO, NO);
+    });
+    cache[i] = [img resizableImageWithCapInsets:UIEdgeInsetsMake(r, r, r, r)];
     return cache[i];
 }
 
+/// Nút chữ xanh phẳng (Đăng nhập, Thêm…): ảnh cao 44, viên giữa cao 32 bo tròn — co giãn theo bề ngang.
 + (UIImage *)sendButtonImage:(BOOL)pressed {
     static UIImage *cache[4];
     int i = (gDark ? 2 : 0) + (pressed ? 1 : 0);
     if (cache[i]) return cache[i];
-    BOOL dark = gDark;
-    const CGFloat m = 3, r = 7, w = 2 * (m + r) + 1, h = 44;
+    UIColor *c = [self accent];
+    if (pressed) c = [c colorWithAlphaComponent:0.7];
+    const CGFloat m = 3, r = 16, w = 2 * (m + r) + 1, h = 44;
     UIImage *img = GMDraw(CGSizeMake(w, h), ^(CGContextRef ctx) {
-        CGRect b = CGRectMake(m + 0.5, 6.5, w - 2 * m - 1, 31);
-        [(dark ? RGBA(0xFFFFFF, 0.08) : RGBA(0xFFFFFF, 0.6)) setFill];
-        [[UIBezierPath bezierPathWithRoundedRect:CGRectOffset(b, 0, 1) cornerRadius:r] fill];
-        UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:b cornerRadius:r];
-        NSArray *c = pressed ? @[RGB(0x5A9AD8), RGB(0x2D72BC), RGB(0x1F62A8), RGB(0x174F8C)]
-                             : @[RGB(0x7CBCF4), RGB(0x3C8DDC), RGB(0x2A78C8), RGB(0x2068B8)];
-        CGFloat loc[] = {0, 0.5, 0.5, 1};
-        GMFillGradient(ctx, p, b, c, loc);
-        CGContextSaveGState(ctx);
-        [p addClip];
-        [RGBA(0xFFFFFF, pressed ? 0.2 : 0.5) setFill];
-        CGContextFillRect(ctx, CGRectMake(0, 7.5, w, 1));
-        CGContextRestoreGState(ctx);
-        [(dark ? RGB(0x0D3A6B) : RGB(0x1B5AA0)) setStroke];
-        p.lineWidth = 1;
-        [p stroke];
+        [c setFill];
+        [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(m, 6, w - 2 * m, 32) cornerRadius:r] fill];
     });
     cache[i] = [img resizableImageWithCapInsets:UIEdgeInsetsMake(0, m + r, 0, m + r)];
     return cache[i];
 }
 
-+ (UIImage *)cardRow:(BOOL)first last:(BOOL)last selected:(BOOL)sel {
+/// Viên kính tròn đường kính `size` - 4 trong ảnh `size` × `size` (chừa bóng): nút biểu tượng (soạn tin, ghim giấy, mic…).
+static UIImage *GMGlassCircle(CGFloat size, BOOL pressed) {
     static NSMutableDictionary *cache;
     if (!cache) cache = [NSMutableDictionary dictionary];
-    NSString *key = [NSString stringWithFormat:@"%d%d%d%d", gDark, first, last, sel];
+    NSString *key = [NSString stringWithFormat:@"%d|%.0f|%d", gDark, size, pressed];
     UIImage *img = [cache objectForKey:key];
     if (img) return img;
-    BOOL dark = gDark;
-    const CGFloat m = 8, r = 12, W = 2 * m + 2 * r + 1, H = 2 * r + 1;
-    UIColor *border = dark ? RGBA(0xFFFFFF, 0.09) : RGBA(0xFFFFFF, 0.8);
-    UIColor *fill = sel ? (dark ? RGBA(0x2E4054, 0.94) : RGBA(0xCFE0F3, 0.92)) : [self glassFill];
-    img = GMDraw(CGSizeMake(W, H), ^(CGContextRef ctx) {
-        UIRectCorner corners = (first ? (UIRectCornerTopLeft | UIRectCornerTopRight) : 0) |
-                               (last ? (UIRectCornerBottomLeft | UIRectCornerBottomRight) : 0);
-        CGRect outer = CGRectMake(m, 0, W - 2 * m, H);
-        [border setFill];
-        [[UIBezierPath bezierPathWithRoundedRect:outer byRoundingCorners:corners cornerRadii:CGSizeMake(r, r)]
-            fillWithBlendMode:kCGBlendModeCopy alpha:1];
-        CGRect in = CGRectMake(m + 1, first ? 1 : 0, W - 2 * m - 2, H - (first ? 1 : 0) - (last ? 1 : 0));
-        [fill setFill];
-        [[UIBezierPath bezierPathWithRoundedRect:in byRoundingCorners:corners cornerRadii:CGSizeMake(r - 1, r - 1)]
-            fillWithBlendMode:kCGBlendModeCopy alpha:1];
-        if (first && !sel) {
-            [(dark ? RGBA(0xFFFFFF, 0.1) : RGBA(0xFFFFFF, 0.95)) setFill];
-            CGContextFillRect(ctx, CGRectMake(m + r, 1, W - 2 * m - 2 * r, 1));
-        }
+    img = GMDraw(CGSizeMake(size, size), ^(CGContextRef ctx) {
+        CGFloat d = size - 4;
+        GMGlassDraw(ctx, CGRectMake(2, 1, d, d), d / 2, pressed, YES);
     });
-    img = [img resizableImageWithCapInsets:UIEdgeInsetsMake(r, m + r, r, m + r)];
     [cache setObject:img forKey:key];
     return img;
 }
 
-+ (UIImage *)badgeImage:(BOOL)muted {
-    static UIImage *cache[2];
-    int i = muted ? 1 : 0;
++ (UIImage *)glassButton:(CGFloat)size pressed:(BOOL)pressed {
+    return GMGlassCircle(size, pressed);
+}
+
++ (UIImage *)glassImage:(CGFloat)h {
+    return GMGlassImage(h, floor((h - 3) / 2), 1, 0.5, 2.5, NO, NO);
+}
+
++ (UIImage *)glassPanel {
+    return GMGlassImage(34, 14, 1, 0.5, 2.5, NO, NO);
+}
+
++ (UIImage *)glassSheet {
+    return GMGlassImage(58, 26, 1, 0.5, 2.5, NO, NO);
+}
+
+/// Nút gửi: tròn xanh, mũi tên trắng chỉ lên (như Telegram mới).
++ (UIImage *)sendCircle:(BOOL)pressed {
+    static UIImage *cache[4];
+    int i = (gDark ? 2 : 0) + (pressed ? 1 : 0);
     if (cache[i]) return cache[i];
+    UIColor *c = [self accent];
+    if (pressed) c = [c colorWithAlphaComponent:0.7];
+    cache[i] = GMDraw(CGSizeMake(40, 40), ^(CGContextRef ctx) {
+        [c setFill];
+        CGContextFillEllipseInRect(ctx, CGRectMake(3, 3, 34, 34));
+        [[UIColor whiteColor] setStroke];
+        CGContextSetLineWidth(ctx, 2.6);
+        CGContextSetLineCap(ctx, kCGLineCapRound);
+        CGContextSetLineJoin(ctx, kCGLineJoinRound);
+        CGContextMoveToPoint(ctx, 20, 28);
+        CGContextAddLineToPoint(ctx, 20, 12.5);
+        CGContextMoveToPoint(ctx, 13.5, 19);
+        CGContextAddLineToPoint(ctx, 20, 12.5);
+        CGContextAddLineToPoint(ctx, 26.5, 19);
+        CGContextStrokePath(ctx);
+    });
+    return cache[i];
+}
+
+/// Nền một hàng danh sách chat (D37: hàng phẳng theo trang — không còn thẻ kính; giữ hàm cho chỗ gọi cũ).
++ (UIImage *)cardRow:(BOOL)first last:(BOOL)last selected:(BOOL)sel {
+    static UIImage *cache[4];
+    int i = (gDark ? 2 : 0) + (sel ? 1 : 0);
+    if (!cache[i]) cache[i] = GMSolid(sel ? [self selectedCell] : GMPage(NO), nil);
+    return cache[i];
+}
+
+/// Nền số chưa đọc: viên thuốc phẳng xanh (tắt tiếng: xám), cao 22.
++ (UIImage *)badgeImage:(BOOL)muted {
+    static UIImage *cache[4];
+    int i = (gDark ? 2 : 0) + (muted ? 1 : 0);
+    if (cache[i]) return cache[i];
+    UIColor *c = muted ? [self mutedBadge] : [self badgeColor];
     const CGFloat h = 22, r = 11, w = 2 * r + 1;
     UIImage *img = GMDraw(CGSizeMake(w, h), ^(CGContextRef ctx) {
-        UIBezierPath *o = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0.5, 0.5, w - 1, h - 1) cornerRadius:r - 0.5];
-        [RGBA(0x000000, 0.22) setStroke];
-        o.lineWidth = 1;
-        [o stroke];
-        [[UIColor whiteColor] setFill];
-        [o fill];
-        UIBezierPath *in = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(2, 2, w - 4, h - 4) cornerRadius:r - 2];
-        NSArray *c = muted ? @[RGB(0xBAC1C9), RGB(0x9AA3AD), RGB(0x88919B)] : @[RGB(0x5AA6EC), RGB(0x2B78C8), RGB(0x1F66B3)];
-        CGFloat loc[] = {0, 0.55, 1};
-        GMFillGradient(ctx, in, CGRectMake(0, 2, w, h - 4), c, loc);
-        GMFillGradient(ctx, in, CGRectMake(0, 2, w, (h - 4) / 2), @[RGBA(0xFFFFFF, 0.42), RGBA(0xFFFFFF, 0.05)], NULL);
+        [c setFill];
+        [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, w, h) cornerRadius:r] fill];
     });
     cache[i] = [img resizableImageWithCapInsets:UIEdgeInsetsMake(0, r, 0, r)];
     return cache[i];
 }
 
-/// Biểu tượng thanh dưới 30 × 30: nét mảnh khi không chọn, tô đặc màu sáng khi chọn.
+/// Biểu tượng thanh dưới 30 × 30: nét mảnh màu chữ khi không chọn, tô đặc màu chủ đạo khi chọn.
 static UIImage *GMTabIcon(NSString *name, BOOL sel) {
-    UIColor *c = sel ? RGB(0x6CC2FF) : RGB(0xB9C4D0);
+    UIColor *c = sel ? [GMTheme accent] : [GMTheme text];
     return GMDraw(CGSizeMake(30, 30), ^(CGContextRef ctx) {
         [c set];
-        CGContextSetLineWidth(ctx, 2);
+        CGContextSetLineWidth(ctx, 1.8);
         CGContextSetLineCap(ctx, kCGLineCapRound);
         CGContextSetLineJoin(ctx, kCGLineJoinRound);
         if ([name isEqual:@"contacts"]) {
-            UIBezierPath *head = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(10, 3.5, 10, 10)];
-            UIBezierPath *body = [UIBezierPath bezierPath];
-            [body moveToPoint:CGPointMake(4.5, 26)];
-            [body addCurveToPoint:CGPointMake(25.5, 26) controlPoint1:CGPointMake(5.5, 14) controlPoint2:CGPointMake(24.5, 14)];
-            [body closePath];
+            // Người trong vòng tròn
+            CGRect o = CGRectMake(3.5, 3.5, 23, 23);
             if (sel) {
-                [head fill];
-                [body fill];
+                CGContextFillEllipseInRect(ctx, o);
+                CGContextSetBlendMode(ctx, kCGBlendModeClear);
             } else {
-                head.lineWidth = body.lineWidth = 2;
-                [head stroke];
-                [body stroke];
+                CGContextStrokeEllipseInRect(ctx, o);
             }
+            CGContextFillEllipseInRect(ctx, CGRectMake(11, 8, 8, 8));
+            CGContextSaveGState(ctx);
+            CGContextAddEllipseInRect(ctx, CGRectInset(o, sel ? 0 : 1, sel ? 0 : 1));
+            CGContextClip(ctx);
+            CGContextFillEllipseInRect(ctx, CGRectMake(6.5, 17.5, 17, 14));
+            CGContextRestoreGState(ctx);
         } else if ([name isEqual:@"chats"]) {
-            UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(3, 4.5, 24, 16.5) cornerRadius:4];
-            [p moveToPoint:CGPointMake(8.5, 21)];
-            [p addLineToPoint:CGPointMake(8.5, 27)];
-            [p addLineToPoint:CGPointMake(15, 21)];
+            // Bong bóng tròn có đuôi trái dưới
+            UIBezierPath *p = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(4, 4, 23, 20.5)];
+            [p moveToPoint:CGPointMake(7.5, 19.5)];
+            [p addQuadCurveToPoint:CGPointMake(4.5, 26.5) controlPoint:CGPointMake(7, 24.5)];
+            [p addQuadCurveToPoint:CGPointMake(12.5, 23.5) controlPoint:CGPointMake(9, 26)];
             if (sel) {
                 [p fill];
             } else {
-                p.lineWidth = 2;
+                p.lineWidth = 1.8;
                 [p stroke];
             }
         } else {
             // Bánh răng: 8 răng + vành; chọn thì tô đặc chừa lỗ giữa
-            CGContextSetLineWidth(ctx, 4);
+            CGContextSetLineWidth(ctx, 3.6);
             for (int k = 0; k < 8; k++) {
                 CGFloat a = k * M_PI / 4;
                 CGContextMoveToPoint(ctx, 15 + 8 * cos(a), 15 + 8 * sin(a));
@@ -653,7 +689,7 @@ static UIImage *GMTabIcon(NSString *name, BOOL sel) {
                 CGContextSetBlendMode(ctx, kCGBlendModeClear);
                 CGContextFillEllipseInRect(ctx, CGRectMake(11, 11, 8, 8));
             } else {
-                CGContextSetLineWidth(ctx, 2.2);
+                CGContextSetLineWidth(ctx, 1.8);
                 CGContextStrokeEllipseInRect(ctx, CGRectMake(6.5, 6.5, 17, 17));
                 CGContextStrokeEllipseInRect(ctx, CGRectMake(11.5, 11.5, 7, 7));
             }
@@ -669,29 +705,91 @@ static UIImage *GMTabIcon(NSString *name, BOOL sel) {
 
 + (UIBarButtonItem *)backItem:(NSString *)title target:(id)target action:(SEL)action {
     UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
-    [b setBackgroundImage:GMBarButtonBg(30, NO, YES) forState:UIControlStateNormal];
-    [b setBackgroundImage:GMBarButtonBg(30, YES, YES) forState:UIControlStateHighlighted];
+    [b setBackgroundImage:GMGlassImage(36, 16, 1, 0.5, 2.5, NO, YES) forState:UIControlStateNormal];
+    [b setBackgroundImage:GMGlassImage(36, 16, 1, 0.5, 2.5, YES, YES) forState:UIControlStateHighlighted];
     [b setTitle:title forState:UIControlStateNormal];
-    [b setTitleColor:[self barText] forState:UIControlStateNormal];
-    [b setTitleShadowColor:gDark ? RGBA(0x000000, 0.6) : RGBA(0xFFFFFF, 0.9) forState:UIControlStateNormal];
-    b.titleLabel.font = [UIFont boldSystemFontOfSize:12];
-    b.titleLabel.shadowOffset = CGSizeMake(0, gDark ? -1 : 1);
-    b.contentEdgeInsets = UIEdgeInsetsMake(0, 16, 0, 9);
-    CGFloat w = [title sizeWithFont:b.titleLabel.font].width + 25;
-    b.frame = CGRectMake(0, 0, w, 30);
+    [b setTitleColor:[self text] forState:UIControlStateNormal];
+    b.titleLabel.font = [UIFont systemFontOfSize:15];
+    b.contentEdgeInsets = UIEdgeInsetsMake(-2, 24, 0, 13);
+    CGFloat w = [title sizeWithFont:b.titleLabel.font].width + 37;
+    b.frame = CGRectMake(0, 0, w, 36);
     [b addTarget:target action:action forControlEvents:UIControlEventTouchUpInside];
     return [[UIBarButtonItem alloc] initWithCustomView:b];
 }
 
 + (UIBarButtonItem *)barButtonIcon:(NSString *)icon target:(id)target action:(SEL)action {
     UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
-    [b setBackgroundImage:GMBarButtonBg(30, NO, NO) forState:UIControlStateNormal];
-    [b setBackgroundImage:GMBarButtonBg(30, YES, NO) forState:UIControlStateHighlighted];
-    [b setImage:[self icon:icon color:[self barText]] forState:UIControlStateNormal];
+    [b setBackgroundImage:GMGlassCircle(38, NO) forState:UIControlStateNormal];
+    [b setBackgroundImage:GMGlassCircle(38, YES) forState:UIControlStateHighlighted];
+    [b setImage:[self icon:icon color:[self text]] forState:UIControlStateNormal];
+    b.imageEdgeInsets = UIEdgeInsetsMake(-2, 0, 0, 0);  // tâm viên kính cao hơn tâm ảnh 1 pt (chừa bóng)
     b.adjustsImageWhenHighlighted = NO;
-    b.frame = CGRectMake(0, 0, 40, 30);
+    b.frame = CGRectMake(0, 0, 38, 38);
     [b addTarget:target action:action forControlEvents:UIControlEventTouchUpInside];
     return [[UIBarButtonItem alloc] initWithCustomView:b];
+}
+
++ (UIButton *)barButtonTitle:(NSString *)title target:(id)target action:(SEL)action {
+    UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
+    [b setBackgroundImage:[self glassImage:38] forState:UIControlStateNormal];
+    [b setBackgroundImage:GMGlassImage(38, 17, 1, 0.5, 2.5, YES, NO) forState:UIControlStateHighlighted];
+    [b setTitleColor:[self text] forState:UIControlStateNormal];
+    b.titleLabel.font = [UIFont systemFontOfSize:16];
+    b.contentEdgeInsets = UIEdgeInsetsMake(-2, 0, 0, 0);
+    [b addTarget:target action:action forControlEvents:UIControlEventTouchUpInside];
+    [self setBarButton:b title:title];
+    return b;
+}
+
++ (void)setBarButton:(UIButton *)b title:(NSString *)title {
+    [b setTitle:title forState:UIControlStateNormal];
+    CGFloat w = MAX(38, ceil([title sizeWithFont:b.titleLabel.font].width) + 32);
+    b.frame = CGRectMake(b.frame.origin.x, b.frame.origin.y, w, 38);
+}
+
++ (UIButton *)backButton:(id)target action:(SEL)action {
+    UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
+    [b setImage:[self icon:@"back" color:[self text]] forState:UIControlStateNormal];
+    b.adjustsImageWhenHighlighted = NO;
+    b.accessibilityLabel = @"Quay lại";
+    UILabel *n = [[UILabel alloc] init];
+    n.tag = 77;
+    n.font = [UIFont boldSystemFontOfSize:12];
+    n.textColor = [UIColor whiteColor];
+    n.textAlignment = GMAlignCenter;
+    n.backgroundColor = [UIColor clearColor];
+    UIImageView *nb = [[UIImageView alloc] initWithImage:[self badgeImage:NO]];
+    nb.tag = 78;
+    nb.userInteractionEnabled = NO;
+    [nb addSubview:n];
+    [b addSubview:nb];
+    [b addTarget:target action:action forControlEvents:UIControlEventTouchUpInside];
+    [self setBackButton:b count:0];
+    return b;
+}
+
++ (void)setBackButton:(UIButton *)b count:(NSInteger)count {
+    UIImageView *nb = (UIImageView *)[b viewWithTag:78];
+    UILabel *n = (UILabel *)[nb viewWithTag:77];
+    if (count <= 0) {
+        nb.hidden = YES;
+        [b setBackgroundImage:GMGlassCircle(38, NO) forState:UIControlStateNormal];
+        [b setBackgroundImage:GMGlassCircle(38, YES) forState:UIControlStateHighlighted];
+        b.imageEdgeInsets = UIEdgeInsetsMake(-2, 0, 0, 0);
+        b.frame = CGRectMake(b.frame.origin.x, b.frame.origin.y, 38, 38);
+        b.accessibilityLabel = @"Quay lại";
+        return;
+    }
+    n.text = count > 999 ? @"999+" : [NSString stringWithFormat:@"%ld", (long)count];
+    CGFloat bw = MAX(20, ceil([n.text sizeWithFont:n.font].width) + 12), w = 30 + bw + 10;
+    nb.hidden = NO;
+    nb.frame = CGRectMake(30, 8.5, bw, 20);
+    n.frame = nb.bounds;
+    [b setBackgroundImage:[self glassImage:38] forState:UIControlStateNormal];
+    [b setBackgroundImage:GMGlassImage(38, 17, 1, 0.5, 2.5, YES, NO) forState:UIControlStateHighlighted];
+    b.imageEdgeInsets = UIEdgeInsetsMake(-2, -(w - 26) + 8, 0, 0);  // mũi tên sát trái
+    b.frame = CGRectMake(b.frame.origin.x, b.frame.origin.y, w, 38);
+    b.accessibilityLabel = [NSString stringWithFormat:@"Quay lại, %@ tin chưa đọc", n.text];
 }
 
 #pragma mark - Áp giao diện
@@ -709,25 +807,23 @@ static UITableView *GMTableOf(UIView *v) {
     return nil;
 }
 
-/// Bảng: hình nền riêng (bảng nhóm thêm sọc), mặt bảng trong suốt, vạch kẻ kính; bảng thường bỏ vạch của hàng trống.
+/// Bảng (D37): nền trơn theo trang (bỏ hình nền / sọc nền bảng nhóm của iOS 6); bảng nhóm bỏ vạch kẻ của hệ thống — ô tự vẽ
+/// nền bo góc có vạch; bảng thường bỏ vạch của hàng trống. Màn chat (GMTagNoWallpaper): trong suốt để lộ hình nền.
 static void GMStyleTable(UITableView *tv) {
     if (!GMOurTable(tv)) return;
     BOOL grouped = tv.style == UITableViewStyleGrouped;
-    tv.backgroundColor = [UIColor clearColor];
-    tv.opaque = NO;
     if (tv.tag == GMTagNoWallpaper) {
         tv.backgroundView = nil;
+        tv.backgroundColor = [UIColor clearColor];
+        tv.opaque = NO;
     } else {
-        GMWallpaperView *wv = (GMWallpaperView *)tv.backgroundView;
-        if (![wv isKindOfClass:[GMWallpaperView class]]) {
-            wv = [[GMWallpaperView alloc] initWithFrame:tv.bounds];
-            tv.backgroundView = wv;
-        }
-        wv.striped = grouped;
+        if (tv.backgroundView) tv.backgroundView = nil;
+        tv.backgroundColor = GMPage(grouped);
     }
-    if (tv.separatorStyle != UITableViewCellSeparatorStyleNone) {
-        tv.separatorColor = grouped ? (gDark ? RGBA(0x000000, 0.55) : RGBA(0x6E7D8C, 0.5)) : [GMTheme glassLine];
-        if (gDark && grouped) tv.separatorStyle = UITableViewCellSeparatorStyleSingleLine;  // bỏ vạch khắc trắng
+    if (grouped) {
+        tv.separatorStyle = UITableViewCellSeparatorStyleNone;
+    } else if (tv.separatorStyle != UITableViewCellSeparatorStyleNone) {
+        tv.separatorColor = [GMTheme separator];
     }
     if (!grouped && !tv.tableFooterView) tv.tableFooterView = [[UIView alloc] initWithFrame:CGRectZero];
 }
@@ -739,15 +835,14 @@ static void GMRecolorHeader(UIView *v) {
         if (l.tag == 4243) return;
         l.tag = 4243;
         l.textColor = [GMTheme secondaryText];
-        l.shadowColor = RGBA(0x000000, 0.5);
-        l.shadowOffset = CGSizeMake(0, -1);
+        l.shadowColor = [UIColor clearColor];
         return;
     }
     for (UIView *s in v.subviews) GMRecolorHeader(s);
 }
 
 static void GMStyleHeaders(UITableView *tv) {
-    if (!gDark || tv.style != UITableViewStyleGrouped || !GMOurTable(tv)) return;
+    if (tv.style != UITableViewStyleGrouped || !GMOurTable(tv)) return;
     for (UIView *v in tv.subviews) {
         if ([v isKindOfClass:[UITableViewCell class]] || v == tv.backgroundView || v == tv.tableHeaderView ||
             v == tv.tableFooterView || [v isKindOfClass:[UIImageView class]]) continue;
@@ -775,33 +870,79 @@ static BOOL GMSkipCell(UITableViewCell *c) {
     return !tv || !GMOurTable(tv);
 }
 
-/// Chữ trong ô nằm trên kính: nền chữ trong suốt (UIKit hay đặt nền chữ = nền ô → hai lớp kính chồng thành mảng trắng).
+/// Chữ trong ô: nền chữ trong suốt (UIKit iOS 5 / 6 đặt nền chữ = nền ô — ô bo góc vẽ bằng ảnh thì thành mảng chữ nhật).
 static void GMClearLabels(UITableViewCell *c) {
     if (GMSkipCell(c)) return;
     if (c.textLabel) c.textLabel.backgroundColor = [UIColor clearColor];
     if (c.detailTextLabel) c.detailTextLabel.backgroundColor = [UIColor clearColor];
 }
 
+/// Nền ô bảng nhóm theo vị trí trong nhóm (D37): bo góc 12 ở ô đầu / cuối, vạch mảnh thụt 15 pt ở đáy (trừ ô cuối).
+static UIImage *GMGroupedCell(BOOL first, BOOL last, BOOL sel) {
+    static NSMutableDictionary *cache;
+    if (!cache) cache = [NSMutableDictionary dictionary];
+    NSString *key = [NSString stringWithFormat:@"%d%d%d%d", gDark, first, last, sel];
+    UIImage *img = [cache objectForKey:key];
+    if (img) return img;
+    const CGFloat r = 12, lc = 16, w = lc + r + 2, h = 2 * r + 2, px = 1 / [UIScreen mainScreen].scale;
+    UIColor *fill = sel ? [GMTheme selectedCell] : [GMTheme cellBackground];
+    UIColor *line = [GMTheme separator];
+    img = GMDraw(CGSizeMake(w, h), ^(CGContextRef ctx) {
+        UIRectCorner corners = (first ? (UIRectCornerTopLeft | UIRectCornerTopRight) : 0) |
+                               (last ? (UIRectCornerBottomLeft | UIRectCornerBottomRight) : 0);
+        [fill setFill];
+        [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, w, h) byRoundingCorners:corners cornerRadii:CGSizeMake(r, r)] fill];
+        if (!last) {
+            [line setFill];
+            CGContextFillRect(ctx, CGRectMake(15, h - px, w - 15, px));
+        }
+    });
+    img = [img resizableImageWithCapInsets:UIEdgeInsetsMake(r, lc, r + 1, r)];
+    [cache setObject:img forKey:key];
+    return img;
+}
+
 static void GMStyleCell(UITableViewCell *c) {
     if (GMSkipCell(c)) return;
-    BOOL grouped = GMTableOf(c).style == UITableViewStyleGrouped;
-    UIColor *fill = grouped ? [GMTheme glassGrouped] : [GMTheme glassFill];
-    if (![c.backgroundColor isEqual:fill]) c.backgroundColor = fill;
-    // Ô kiểu Default không có detailTextLabel (nil — không được cho vào mảng)
-    NSMutableArray *labels = [NSMutableArray array];
-    if (c.textLabel) [labels addObject:c.textLabel];
-    if (c.detailTextLabel) [labels addObject:c.detailTextLabel];
-    for (UILabel *l in labels) {
-        l.backgroundColor = [UIColor clearColor];
-        if (gDark && l.text.length && GMIsDefaultDark(l.textColor)) {
-            l.textColor = l == c.textLabel ? [GMTheme text] : [GMTheme secondaryText];
+    UITableView *tv = GMTableOf(c);
+    if (tv.style == UITableViewStyleGrouped) {
+        NSIndexPath *ip = [tv indexPathForCell:c];
+        BOOL first = YES, last = YES;
+        if (ip) {
+            first = ip.row == 0;
+            last = ip.row == [tv numberOfRowsInSection:ip.section] - 1;
+        }
+        NSInteger tag = 4240 + (first ? 1 : 0) + (last ? 2 : 0) + (gDark ? 4 : 0);
+        if (c.backgroundView.tag != tag) {
+            UIImageView *bg = [[UIImageView alloc] initWithImage:GMGroupedCell(first, last, NO)];
+            bg.tag = tag;
+            c.backgroundView = bg;
+            c.selectedBackgroundView = [[UIImageView alloc] initWithImage:GMGroupedCell(first, last, YES)];
+            [c setNeedsLayout];
+        }
+        if (![c.backgroundColor isEqual:[UIColor clearColor]]) c.backgroundColor = [UIColor clearColor];
+    } else {
+        UIColor *fill = GMPage(NO);
+        if (![c.backgroundColor isEqual:fill]) c.backgroundColor = fill;
+        if (!c.selectedBackgroundView || c.selectedBackgroundView.tag != 4242) {
+            UIView *sel = [[UIView alloc] init];
+            sel.tag = 4242;
+            sel.backgroundColor = [GMTheme selectedCell];
+            c.selectedBackgroundView = sel;
         }
     }
-    if (gDark && (!c.selectedBackgroundView || c.selectedBackgroundView.tag != 4242)) {
-        UIView *sel = [[UIView alloc] init];
-        sel.tag = 4242;
-        sel.backgroundColor = [GMTheme selectedCell];
-        c.selectedBackgroundView = sel;
+    // Ô kiểu Default không có detailTextLabel (nil — không được cho vào mảng)
+    if (c.textLabel) {
+        c.textLabel.backgroundColor = [UIColor clearColor];
+        if (gDark && c.textLabel.text.length && GMIsDefaultDark(c.textLabel.textColor)) c.textLabel.textColor = [GMTheme text];
+    }
+    if (c.detailTextLabel) {
+        c.detailTextLabel.backgroundColor = [UIColor clearColor];
+        // Chữ phụ mặc định của iOS 6 (xanh xám) → xám trung tính như iOS 26
+        if (c.detailTextLabel.text.length && GMIsDefaultDark(c.detailTextLabel.textColor) &&
+            ![c.detailTextLabel.textColor isEqual:[GMTheme secondaryText]]) {
+            c.detailTextLabel.textColor = [GMTheme secondaryText];
+        }
     }
 }
 
@@ -812,6 +953,17 @@ static void GMSwizzle(Class cls, SEL sel, void (^after)(id me)) {
     method_setImplementation(m, imp_implementationWithBlock(^(id me) {
         orig(me, sel);
         after(me);
+    }));
+}
+
+/// Như GMSwizzle cho hàm một đối số BOOL (viewWillAppear:).
+static void GMSwizzleB(Class cls, SEL sel, void (^after)(id me, BOOL a)) {
+    Method m = class_getInstanceMethod(cls, sel);
+    if (!m) return;
+    void (*orig)(id, SEL, BOOL) = (void (*)(id, SEL, BOOL))method_getImplementation(m);
+    method_setImplementation(m, imp_implementationWithBlock(^(id me, BOOL a) {
+        orig(me, sel, a);
+        after(me, a);
     }));
 }
 
@@ -826,72 +978,224 @@ static void GMSwizzleBB(Class cls, SEL sel, void (^after)(id me)) {
     }));
 }
 
+#pragma mark Thanh trên / thanh dưới theo từng màn
+
+typedef NS_ENUM(NSInteger, GMBarKind) { GMBarPlain, GMBarGrouped, GMBarWallpaper };
+
+/// Màn này nền gì: bảng nhóm / bảng thường / hình nền (màn chat, đăng nhập…).
+static GMBarKind GMBarKindFor(UIViewController *vc) {
+    UITableView *tv = nil;
+    BOOL wall = NO;
+    if ([vc isKindOfClass:[UITableViewController class]]) {
+        tv = ((UITableViewController *)vc).tableView;
+    } else if ([vc isViewLoaded]) {
+        for (UIView *s in vc.view.subviews) {
+            if (!tv && [s isKindOfClass:[UITableView class]]) tv = (UITableView *)s;
+            if ([s isKindOfClass:[GMWallpaperView class]]) wall = YES;
+        }
+    }
+    if (tv && tv.tag == GMTagNoWallpaper) return GMBarWallpaper;
+    if (tv) return tv.style == UITableViewStyleGrouped ? GMBarGrouped : GMBarPlain;
+    return wall ? GMBarWallpaper : GMBarPlain;
+}
+
+/// Lát hình nền (0, y, w, h) — thanh trên màn chat liền với nền của màn (GMWallpaperView canh theo đáy thanh trên); `fade`: mờ
+/// dần xuống dưới (dải dưới thanh — tin cuộn lên tan vào nền).
+static UIImage *GMWallSliceDir(CGFloat w, CGFloat y, CGFloat h, BOOL fade, BOOL up) {
+    static NSMutableDictionary *cache;
+    if (!cache) cache = [NSMutableDictionary dictionary];
+    NSString *key = [NSString stringWithFormat:@"%d|%.0f|%.0f|%.0f|%d|%d", gDark, w, y, h, fade, up];
+    UIImage *img = [cache objectForKey:key];
+    if (img) return img;
+    UIImage *wall = [GMTheme wallpaper];
+    img = GMDraw(CGSizeMake(w, h), ^(CGContextRef ctx) {
+        [wall drawAtPoint:CGPointMake(0, -y)];
+        if (fade) {
+            CGContextSetBlendMode(ctx, kCGBlendModeDestinationIn);
+            NSMutableArray *cols = [NSMutableArray array];
+            CGFloat locs[5];
+            for (int i = 0; i < 5; i++) {
+                CGFloat t = i / 4.0;
+                [cols addObject:RGBA(0x000000, (1 - t) * (1 - t))];
+                locs[i] = t;
+            }
+            if (up) cols = [[[cols reverseObjectEnumerator] allObjects] mutableCopy];
+            GMVGradient(ctx, CGRectMake(0, 0, w, h), cols, locs);
+        }
+    });
+    [cache setObject:img forKey:key];
+    return img;
+}
+
+static UIImage *GMWallSlice(CGFloat w, CGFloat y, CGFloat h, BOOL fade) {
+    return GMWallSliceDir(w, y, h, fade, NO);
+}
+
+static const NSInteger kGMFadeTag = 0x4750, kGMTabWallTag = 0x4751;
+static char kGMBarSig;
+
+/// Dải mờ dần sát mép ngoài của thanh (con của thanh, nằm ngoài khung — không nhận chạm): dưới thanh trên / trên thanh dưới.
+static UIImageView *GMFadeView(UIView *bar, BOOL below) {
+    UIImageView *v = (UIImageView *)[bar viewWithTag:kGMFadeTag];
+    if (!v) {
+        const CGFloat h = 12, w = bar.bounds.size.width;
+        v = [[UIImageView alloc] initWithFrame:below ? CGRectMake(0, bar.bounds.size.height, w, h) : CGRectMake(0, -h, w, h)];
+        v.tag = kGMFadeTag;
+        v.userInteractionEnabled = NO;
+        v.autoresizingMask = UIViewAutoresizingFlexibleWidth |
+                             (below ? UIViewAutoresizingFlexibleTopMargin : UIViewAutoresizingFlexibleBottomMargin);
+        [bar addSubview:v];
+    }
+    return v;
+}
+
++ (void)styleBarsFor:(UIViewController *)vc animated:(BOOL)animated {
+    if (![NSStringFromClass([vc class]) hasPrefix:@"GM"]) return;
+    UINavigationController *nav = vc.navigationController;
+    if (!nav || vc.parentViewController != nav) return;
+    // Nút quay lại của màn sau: chỉ mũi tên trong viên kính (iOS 26)
+    if (![vc.navigationItem.backBarButtonItem.title isEqual:@" "]) {
+        vc.navigationItem.backBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@" " style:UIBarButtonItemStyleBordered
+                                                                              target:nil action:nil];
+    }
+    if (nav.viewControllers.count > 1 && [nav.viewControllers objectAtIndex:0] != vc && !vc.navigationItem.leftBarButtonItem &&
+        !vc.navigationItem.hidesBackButton) {
+        UIBarButtonItem *back = [GMTheme barButtonIcon:@"back" target:vc action:@selector(gmBack)];
+        back.accessibilityLabel = @"Quay lại";
+        vc.navigationItem.leftBarButtonItem = back;
+    }
+    GMBarKind kind = GMBarKindFor(vc);
+    UINavigationBar *bar = nav.navigationBar;
+    CGFloat w = bar.bounds.size.width, h = bar.bounds.size.height;
+    NSString *sig = [NSString stringWithFormat:@"%d|%d|%.0f|%.0f", (int)kind, gDark, w, h];
+    if (w > 0 && h > 0 && ![objc_getAssociatedObject(bar, &kGMBarSig) isEqual:sig]) {
+        objc_setAssociatedObject(bar, &kGMBarSig, sig, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (animated) {
+            CATransition *t = [CATransition animation];
+            t.type = kCATransitionFade;
+            t.duration = 0.25;
+            [bar.layer addAnimation:t forKey:@"gmBarBg"];
+        }
+        UIImage *bg, *fade;
+        if (kind == GMBarWallpaper) {
+            bg = GMWallSlice(w, 0, h, NO);
+            fade = GMWallSlice(w, h, 12, YES);
+        } else {
+            UIColor *c = GMPage(kind == GMBarGrouped);
+            bg = GMSolid(c, nil);
+            fade = GMFade(c, 12, YES);
+        }
+        [bar setBackgroundImage:bg forBarMetrics:UIBarMetricsDefault];
+        [bar setBackgroundImage:bg forBarMetrics:UIBarMetricsLandscapePhone];
+        GMFadeView(bar, YES).image = fade;
+    }
+    // Màn đang hiện cùng thanh dưới: hai bên viên kính lộ nền của màn (màu trang / hình nền), dải mờ phía trên thanh
+    UITabBarController *tbc = vc.tabBarController;
+    if (tbc && !vc.hidesBottomBarWhenPushed && !tbc.tabBar.hidden) {
+        UIView *wall = [tbc.view viewWithTag:kGMTabWallTag];
+        UITabBar *tb = tbc.tabBar;
+        if (kind == GMBarWallpaper) {
+            if (!wall) {
+                wall = [[GMWallpaperView alloc] initWithFrame:tbc.view.bounds];
+                wall.tag = kGMTabWallTag;
+                [tbc.view insertSubview:wall atIndex:0];
+            }
+            wall.hidden = NO;
+            GMFadeView(tb, NO).image = GMWallSliceDir(tb.bounds.size.width, tb.frame.origin.y - 12, 12, YES, YES);
+        } else {
+            wall.hidden = YES;
+            UIColor *c = GMPage(kind == GMBarGrouped);
+            tbc.view.backgroundColor = c;
+            GMFadeView(tb, NO).image = GMFade(c, 12, NO);
+        }
+    }
+}
+
+static UIImage *GMSearchField(void) {
+    const CGFloat r = 15, w = 2 * r + 1, h = 2 * r + 1;
+    UIColor *c = [GMTheme fieldBackground];
+    UIImage *img = GMDraw(CGSizeMake(w, h), ^(CGContextRef ctx) {
+        [c setFill];
+        [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, w, h) cornerRadius:r] fill];
+    });
+    return [img resizableImageWithCapInsets:UIEdgeInsetsMake(r, r, r, r)];
+}
+
 + (void)apply {
     gDark = [self wantsDark];
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         gBubbleCell = NSClassFromString(@"GMBubbleCell");
         GMSwizzle([UITableView class], @selector(didMoveToWindow), ^(id me) { GMStyleTable(me); });
-        GMSwizzle([UITableView class], @selector(layoutSubviews), ^(id me) { GMStyleHeaders(me); });
+        GMSwizzle([UITableView class], @selector(layoutSubviews), ^(id me) { if (gDark) GMStyleHeaders(me); });
         GMSwizzle([UITableViewCell class], @selector(layoutSubviews), ^(id me) { GMStyleCell(me); });
         GMSwizzleBB([UITableViewCell class], @selector(setHighlighted:animated:), ^(id me) { GMClearLabels(me); });
         GMSwizzleBB([UITableViewCell class], @selector(setSelected:animated:), ^(id me) { GMClearLabels(me); });
+        GMSwizzleB([UIViewController class], @selector(viewWillAppear:), ^(id me, BOOL a) { [GMTheme styleBarsFor:me animated:a]; });
     });
-    [UIApplication sharedApplication].statusBarStyle = gDark ? UIStatusBarStyleBlackOpaque : UIStatusBarStyleDefault;
-    NSValue *shadowOff = [NSValue valueWithUIOffset:UIOffsetMake(0, gDark ? -1 : 1)];
+    // Thanh trạng thái iOS 5 / 6 không trong suốt được kiểu iOS 7+: đen đặc cả hai chế độ (bản mẫu D37)
+    [UIApplication sharedApplication].statusBarStyle = UIStatusBarStyleBlackOpaque;
+    NSValue *noOff = [NSValue valueWithUIOffset:UIOffsetZero];
 
-    // Thanh trên: kính bóng, tiêu đề nổi
+    // Thanh trên: không còn «thanh» — nền theo màu trang (từng màn đặt lại ở styleBarsFor:), tiêu đề đậm không bóng
     UINavigationBar *nb = [UINavigationBar appearance];
-    [nb setBackgroundImage:GMNavBg(44) forBarMetrics:UIBarMetricsDefault];
-    [nb setBackgroundImage:GMNavBg(32) forBarMetrics:UIBarMetricsLandscapePhone];
+    [nb setBackgroundImage:GMSolid(GMPage(NO), nil) forBarMetrics:UIBarMetricsDefault];
+    [nb setBackgroundImage:GMSolid(GMPage(NO), nil) forBarMetrics:UIBarMetricsLandscapePhone];
+    GM_IOS6_BEGIN
+    if ([UINavigationBar instancesRespondToSelector:@selector(setShadowImage:)]) [nb setShadowImage:GMSolid([UIColor clearColor], nil)];
+    GM_IOS6_END
     [nb setTitleTextAttributes:@{
-        UITextAttributeTextColor: [self navTitle],
-        UITextAttributeTextShadowColor: [self navTitleShadow],
-        UITextAttributeTextShadowOffset: shadowOff,
-        UITextAttributeFont: [UIFont boldSystemFontOfSize:20],
+        UITextAttributeTextColor: [self text],
+        UITextAttributeTextShadowColor: [UIColor clearColor],
+        UITextAttributeTextShadowOffset: noOff,
+        UITextAttributeFont: [UIFont boldSystemFontOfSize:17],
     }];
 
-    // Nút thanh trên + nút «Huỷ» của ô tìm: viền nổi kiểu iOS 6, nút quay lại hình mũi tên
+    // Nút thanh trên + nút «Huỷ» của ô tìm: viên kính, chữ màu chữ thường; nút quay lại: viên kính có mũi tên
     NSDictionary *normal = @{
-        UITextAttributeTextColor: [self barText],
-        UITextAttributeTextShadowColor: gDark ? RGBA(0x000000, 0.6) : RGBA(0xFFFFFF, 0.9),
-        UITextAttributeTextShadowOffset: shadowOff,
-        UITextAttributeFont: [UIFont boldSystemFontOfSize:12],
+        UITextAttributeTextColor: [self text],
+        UITextAttributeTextShadowColor: [UIColor clearColor],
+        UITextAttributeTextShadowOffset: noOff,
+        UITextAttributeFont: [UIFont systemFontOfSize:15],
     };
     NSMutableDictionary *disabled = [normal mutableCopy];
-    [disabled setObject:[[self barText] colorWithAlphaComponent:0.4] forKey:UITextAttributeTextColor];
+    [disabled setObject:[[self text] colorWithAlphaComponent:0.35] forKey:UITextAttributeTextColor];
     for (UIBarButtonItem *bi in @[[UIBarButtonItem appearanceWhenContainedIn:[UINavigationBar class], nil],
                                   [UIBarButtonItem appearanceWhenContainedIn:[UISearchBar class], nil]]) {
         for (NSNumber *m in @[@(UIBarMetricsDefault), @(UIBarMetricsLandscapePhone)]) {
-            CGFloat h = m.integerValue == UIBarMetricsDefault ? 30 : 24;
-            [bi setBackgroundImage:GMBarButtonBg(h, NO, NO) forState:UIControlStateNormal barMetrics:m.integerValue];
-            [bi setBackgroundImage:GMBarButtonBg(h, YES, NO) forState:UIControlStateHighlighted barMetrics:m.integerValue];
-            [bi setBackButtonBackgroundImage:GMBarButtonBg(h, NO, YES) forState:UIControlStateNormal barMetrics:m.integerValue];
-            [bi setBackButtonBackgroundImage:GMBarButtonBg(h, YES, YES) forState:UIControlStateHighlighted barMetrics:m.integerValue];
-            [bi setBackButtonTitlePositionAdjustment:UIOffsetMake(1, 0) forBarMetrics:m.integerValue];
+            BOOL land = m.integerValue != UIBarMetricsDefault;
+            CGFloat h = land ? 24 : 30, r = land ? 10 : 13;
+            [bi setBackgroundImage:GMGlassImage(h, r, 1, 0.5, 2.5, NO, NO) forState:UIControlStateNormal barMetrics:m.integerValue];
+            [bi setBackgroundImage:GMGlassImage(h, r, 1, 0.5, 2.5, YES, NO) forState:UIControlStateHighlighted barMetrics:m.integerValue];
+            [bi setBackButtonBackgroundImage:GMGlassImage(h, r, 1, 0.5, 2.5, NO, YES) forState:UIControlStateNormal
+                                  barMetrics:m.integerValue];
+            [bi setBackButtonBackgroundImage:GMGlassImage(h, r, 1, 0.5, 2.5, YES, YES) forState:UIControlStateHighlighted
+                                  barMetrics:m.integerValue];
+            [bi setTitlePositionAdjustment:UIOffsetMake(0, -1) forBarMetrics:m.integerValue];
+            [bi setBackButtonTitlePositionAdjustment:UIOffsetMake(0, -1) forBarMetrics:m.integerValue];
         }
         [bi setTitleTextAttributes:normal forState:UIControlStateNormal];
         [bi setTitleTextAttributes:normal forState:UIControlStateHighlighted];
         [bi setTitleTextAttributes:disabled forState:UIControlStateDisabled];
     }
 
-    // Ô tìm: nền trong suốt (lộ hình nền), ô nhập bo tròn lõm
+    // Ô tìm: nền trong suốt, ô nhập viên thuốc xám nhạt
     UISearchBar *sb = [UISearchBar appearance];
     [sb setBackgroundImage:GMSolid([UIColor clearColor], nil)];
-    [sb setSearchFieldBackgroundImage:GMField(15, 0.8) forState:UIControlStateNormal];
+    [sb setSearchFieldBackgroundImage:GMSearchField() forState:UIControlStateNormal];
 
-    // Thanh dưới: kính khói, ô sáng sau mục đang chọn, chữ sáng
+    // Thanh dưới: viên kính nổi, viên sáng sau mục đang chọn, chữ màu chữ / màu chủ đạo
     UITabBar *tb = [UITabBar appearance];
     [tb setBackgroundImage:GMTabBg()];
     [tb setSelectionIndicatorImage:GMTabSelection()];
     NSDictionary *tabNormal = @{
-        UITextAttributeTextColor: RGB(0xB9C4D0),
-        UITextAttributeTextShadowColor: RGBA(0x000000, 0.5),
-        UITextAttributeTextShadowOffset: [NSValue valueWithUIOffset:UIOffsetMake(0, -1)],
+        UITextAttributeTextColor: [self text],
+        UITextAttributeTextShadowColor: [UIColor clearColor],
+        UITextAttributeTextShadowOffset: noOff,
         UITextAttributeFont: [UIFont boldSystemFontOfSize:10],
     };
     NSMutableDictionary *tabSel = [tabNormal mutableCopy];
-    [tabSel setObject:[UIColor whiteColor] forKey:UITextAttributeTextColor];
+    [tabSel setObject:[self accent] forKey:UITextAttributeTextColor];
     UITabBarItem *ti = [UITabBarItem appearance];
     [ti setTitleTextAttributes:tabNormal forState:UIControlStateNormal];
     [ti setTitleTextAttributes:tabSel forState:UIControlStateSelected];
@@ -1130,6 +1434,218 @@ static NSDateComponents *GMDay(NSDate *d) {
             CGContextMoveToPoint(ctx, 9, 22.5);
             CGContextAddLineToPoint(ctx, 17, 22.5);
             CGContextStrokePath(ctx);
+        } else if ([name isEqual:@"pin"]) {
+            // Ghim: đinh ghim nghiêng (danh sách chat, D37)
+            CGContextSetLineWidth(ctx, 1.8);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            CGContextTranslateCTM(ctx, 13, 13);
+            CGContextRotateCTM(ctx, M_PI / 4);
+            CGContextMoveToPoint(ctx, -3.5, -8);
+            CGContextAddLineToPoint(ctx, 3.5, -8);
+            CGContextAddLineToPoint(ctx, 2.5, -1.5);
+            CGContextAddLineToPoint(ctx, 5.5, 2);
+            CGContextAddLineToPoint(ctx, -5.5, 2);
+            CGContextAddLineToPoint(ctx, -2.5, -1.5);
+            CGContextClosePath(ctx);
+            CGContextFillPath(ctx);
+            CGContextMoveToPoint(ctx, 0, 2);
+            CGContextAddLineToPoint(ctx, 0, 9.5);
+            CGContextStrokePath(ctx);
+        } else if ([name isEqual:@"muted"]) {
+            // Loa gạch chéo
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            CGContextMoveToPoint(ctx, 4, 10);
+            CGContextAddLineToPoint(ctx, 8, 10);
+            CGContextAddLineToPoint(ctx, 13.5, 5);
+            CGContextAddLineToPoint(ctx, 13.5, 21);
+            CGContextAddLineToPoint(ctx, 8, 16);
+            CGContextAddLineToPoint(ctx, 4, 16);
+            CGContextClosePath(ctx);
+            CGContextFillPath(ctx);
+            CGContextSetLineWidth(ctx, 2);
+            CGContextMoveToPoint(ctx, 16.5, 10);
+            CGContextAddLineToPoint(ctx, 22, 16);
+            CGContextMoveToPoint(ctx, 22, 10);
+            CGContextAddLineToPoint(ctx, 16.5, 16);
+            CGContextStrokePath(ctx);
+        } else if ([name isEqual:@"read"] || [name isEqual:@"sent"]) {
+            // ✓✓ đã đọc / ✓ đã gửi
+            CGContextSetLineWidth(ctx, 2);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            BOOL two = [name isEqual:@"read"];
+            CGFloat dx = two ? -2.5 : 0;
+            CGContextMoveToPoint(ctx, 5 + dx, 13.5);
+            CGContextAddLineToPoint(ctx, 9 + dx, 17.5);
+            CGContextAddLineToPoint(ctx, 17 + dx, 8.5);
+            if (two) {
+                CGContextMoveToPoint(ctx, 13 + dx, 16.5);
+                CGContextAddLineToPoint(ctx, 14 + dx, 17.5);
+                CGContextAddLineToPoint(ctx, 22 + dx, 8.5);
+            }
+            CGContextStrokePath(ctx);
+        } else if ([name isEqual:@"reply"] || [name isEqual:@"forward"]) {
+            // Mũi tên cong: trả lời (sang trái) / chuyển tiếp (lật ngang)
+            if ([name isEqual:@"forward"]) {
+                CGContextTranslateCTM(ctx, 26, 0);
+                CGContextScaleCTM(ctx, -1, 1);
+            }
+            CGContextSetLineWidth(ctx, 1.9);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            CGContextMoveToPoint(ctx, 10, 6.5);
+            CGContextAddLineToPoint(ctx, 4.5, 12);
+            CGContextAddLineToPoint(ctx, 10, 17.5);
+            CGContextMoveToPoint(ctx, 4.5, 12);
+            CGContextAddLineToPoint(ctx, 14, 12);
+            CGContextAddQuadCurveToPoint(ctx, 21.5, 12, 21.5, 20.5);
+            CGContextStrokePath(ctx);
+        } else if ([name isEqual:@"copy"]) {
+            CGContextSetLineWidth(ctx, 1.8);
+            [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(9.5, 9.5, 12, 12) cornerRadius:2.5] stroke];
+            CGContextMoveToPoint(ctx, 16.5, 6.5);
+            CGContextAddLineToPoint(ctx, 16.5, 6);
+            CGContextAddQuadCurveToPoint(ctx, 16.5, 4.5, 15, 4.5);
+            CGContextAddLineToPoint(ctx, 6, 4.5);
+            CGContextAddQuadCurveToPoint(ctx, 4.5, 4.5, 4.5, 6);
+            CGContextAddLineToPoint(ctx, 4.5, 15);
+            CGContextAddQuadCurveToPoint(ctx, 4.5, 16.5, 6, 16.5);
+            CGContextAddLineToPoint(ctx, 6.5, 16.5);
+            CGContextStrokePath(ctx);
+        } else if ([name isEqual:@"save"]) {
+            // Mũi tên xuống khay
+            CGContextSetLineWidth(ctx, 1.9);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            CGContextMoveToPoint(ctx, 13, 4);
+            CGContextAddLineToPoint(ctx, 13, 15.5);
+            CGContextMoveToPoint(ctx, 8.5, 11.5);
+            CGContextAddLineToPoint(ctx, 13, 16);
+            CGContextAddLineToPoint(ctx, 17.5, 11.5);
+            CGContextMoveToPoint(ctx, 4.5, 15.5);
+            CGContextAddLineToPoint(ctx, 4.5, 21.5);
+            CGContextAddLineToPoint(ctx, 21.5, 21.5);
+            CGContextAddLineToPoint(ctx, 21.5, 15.5);
+            CGContextStrokePath(ctx);
+        } else if ([name isEqual:@"edit"]) {
+            // Bút chì chéo
+            CGContextSetLineWidth(ctx, 1.8);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            CGContextMoveToPoint(ctx, 17, 4.5);
+            CGContextAddLineToPoint(ctx, 21.5, 9);
+            CGContextAddLineToPoint(ctx, 9.5, 21);
+            CGContextAddLineToPoint(ctx, 4.5, 21.5);
+            CGContextAddLineToPoint(ctx, 5, 16.5);
+            CGContextClosePath(ctx);
+            CGContextMoveToPoint(ctx, 14.5, 7);
+            CGContextAddLineToPoint(ctx, 19, 11.5);
+            CGContextStrokePath(ctx);
+        } else if ([name isEqual:@"trash"]) {
+            CGContextSetLineWidth(ctx, 1.8);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            CGContextMoveToPoint(ctx, 4.5, 7);
+            CGContextAddLineToPoint(ctx, 21.5, 7);
+            CGContextMoveToPoint(ctx, 10, 7);
+            CGContextAddLineToPoint(ctx, 10, 4.5);
+            CGContextAddLineToPoint(ctx, 16, 4.5);
+            CGContextAddLineToPoint(ctx, 16, 7);
+            CGContextMoveToPoint(ctx, 6.5, 7);
+            CGContextAddLineToPoint(ctx, 7.5, 21.5);
+            CGContextAddLineToPoint(ctx, 18.5, 21.5);
+            CGContextAddLineToPoint(ctx, 19.5, 7);
+            CGContextMoveToPoint(ctx, 11, 11);
+            CGContextAddLineToPoint(ctx, 11, 17.5);
+            CGContextMoveToPoint(ctx, 15, 11);
+            CGContextAddLineToPoint(ctx, 15, 17.5);
+            CGContextStrokePath(ctx);
+        } else if ([name isEqual:@"x"]) {
+            CGContextSetLineWidth(ctx, 2.4);
+            CGContextMoveToPoint(ctx, 8, 8);
+            CGContextAddLineToPoint(ctx, 18, 18);
+            CGContextMoveToPoint(ctx, 18, 8);
+            CGContextAddLineToPoint(ctx, 8, 18);
+            CGContextStrokePath(ctx);
+        } else if ([name isEqual:@"photo"]) {
+            CGContextSetLineWidth(ctx, 1.8);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(3.5, 5.5, 19, 15) cornerRadius:2.5] stroke];
+            CGContextMoveToPoint(ctx, 3.5, 17.5);
+            CGContextAddLineToPoint(ctx, 9, 12);
+            CGContextAddLineToPoint(ctx, 13.5, 16.5);
+            CGContextAddLineToPoint(ctx, 16.5, 13.5);
+            CGContextAddLineToPoint(ctx, 22.5, 19.5);
+            CGContextStrokePath(ctx);
+            CGContextFillEllipseInRect(ctx, CGRectMake(15.5, 8, 3, 3));
+        } else if ([name isEqual:@"file"]) {
+            CGContextSetLineWidth(ctx, 1.8);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            CGContextMoveToPoint(ctx, 15, 3.5);
+            CGContextAddLineToPoint(ctx, 6.5, 3.5);
+            CGContextAddLineToPoint(ctx, 6.5, 22.5);
+            CGContextAddLineToPoint(ctx, 19.5, 22.5);
+            CGContextAddLineToPoint(ctx, 19.5, 8);
+            CGContextClosePath(ctx);
+            CGContextMoveToPoint(ctx, 15, 3.5);
+            CGContextAddLineToPoint(ctx, 15, 8);
+            CGContextAddLineToPoint(ctx, 19.5, 8);
+            CGContextStrokePath(ctx);
+        } else if ([name isEqual:@"location"]) {
+            CGContextSetLineWidth(ctx, 1.8);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            CGContextMoveToPoint(ctx, 13, 22.5);
+            CGContextAddCurveToPoint(ctx, 8.5, 18, 6, 14, 6, 10.5);
+            CGContextAddArc(ctx, 13, 10.5, 7, M_PI, 0, 0);
+            CGContextAddCurveToPoint(ctx, 20, 14, 17.5, 18, 13, 22.5);
+            CGContextStrokePath(ctx);
+            CGContextStrokeEllipseInRect(ctx, CGRectMake(10.5, 8, 5, 5));
+        } else if ([name isEqual:@"qr"]) {
+            CGContextSetLineWidth(ctx, 1.8);
+            for (int k = 0; k < 3; k++) {
+                CGFloat x = k == 1 ? 14 : 4, y = k == 2 ? 14 : 4;
+                CGContextStrokeRect(ctx, CGRectMake(x + 0.5, y + 0.5, 7, 7));
+                CGContextFillRect(ctx, CGRectMake(x + 3, y + 3, 2, 2));
+            }
+            CGContextFillRect(ctx, CGRectMake(14.5, 14.5, 3, 3));
+            CGContextFillRect(ctx, CGRectMake(19, 19, 3, 3));
+            CGContextFillRect(ctx, CGRectMake(19, 14.5, 3, 3));
+            CGContextFillRect(ctx, CGRectMake(14.5, 19, 3, 3));
+        } else if ([name isEqual:@"card"]) {
+            CGContextSetLineWidth(ctx, 1.8);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(3, 5.5, 20, 15) cornerRadius:2.5] stroke];
+            CGContextStrokeEllipseInRect(ctx, CGRectMake(7, 9, 5, 5));
+            CGContextMoveToPoint(ctx, 6, 17.5);
+            CGContextAddQuadCurveToPoint(ctx, 9.5, 13.5, 13, 17.5);
+            CGContextMoveToPoint(ctx, 15.5, 10.5);
+            CGContextAddLineToPoint(ctx, 19.5, 10.5);
+            CGContextMoveToPoint(ctx, 15.5, 14.5);
+            CGContextAddLineToPoint(ctx, 19.5, 14.5);
+            CGContextStrokePath(ctx);
+        } else if ([name isEqual:@"camera"]) {
+            CGContextSetLineWidth(ctx, 1.8);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            CGContextMoveToPoint(ctx, 3.5, 9);
+            CGContextAddLineToPoint(ctx, 8, 9);
+            CGContextAddLineToPoint(ctx, 10, 6);
+            CGContextAddLineToPoint(ctx, 16, 6);
+            CGContextAddLineToPoint(ctx, 18, 9);
+            CGContextAddLineToPoint(ctx, 22.5, 9);
+            CGContextAddLineToPoint(ctx, 22.5, 20.5);
+            CGContextAddLineToPoint(ctx, 3.5, 20.5);
+            CGContextClosePath(ctx);
+            CGContextStrokePath(ctx);
+            CGContextStrokeEllipseInRect(ctx, CGRectMake(9, 10, 8, 8));
+        } else if ([name isEqual:@"back"]) {
+            CGContextSetLineWidth(ctx, 2.6);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            CGContextMoveToPoint(ctx, 15.5, 5.5);
+            CGContextAddLineToPoint(ctx, 8.5, 13);
+            CGContextAddLineToPoint(ctx, 15.5, 20.5);
+            CGContextStrokePath(ctx);
+        } else if ([name isEqual:@"down"]) {
+            CGContextSetLineWidth(ctx, 2.4);
+            CGContextSetLineJoin(ctx, kCGLineJoinRound);
+            CGContextMoveToPoint(ctx, 7, 10);
+            CGContextAddLineToPoint(ctx, 13, 16);
+            CGContextAddLineToPoint(ctx, 19, 10);
+            CGContextStrokePath(ctx);
         } else {
             // Kẹp giấy: hai vòng lồng nhau
             CGContextMoveToPoint(ctx, 16, 7);
@@ -1159,25 +1675,23 @@ static NSDateComponents *GMDay(NSDate *d) {
     if (!cache) cache = [NSMutableDictionary dictionary];
     UIImage *img = [cache objectForKey:kind];
     if (img) return img;
-    // Hai sắc mỗi biểu tượng (trên sáng → dưới đậm), như biểu tượng Cài đặt của iOS 6
-    int top, bot;
-    if ([kind isEqual:@"saved"]) top = 0xA596EC, bot = 0x6E5BD0;
-    else if ([kind isEqual:@"proxy"]) top = 0x54C6D8, bot = 0x1D8EA3;
-    else if ([kind isEqual:@"storage"]) top = 0x6FD27A, bot = 0x2FA43F;
-    else if ([kind isEqual:@"notify"]) top = 0xFF7B72, bot = 0xE0352B;
-    else if ([kind isEqual:@"lock"]) top = 0x8B89F0, bot = 0x4F4CC9;
-    else if ([kind isEqual:@"theme"]) top = 0x5D7590, bot = 0x2C3E52;
-    else if ([kind isEqual:@"stickers"]) top = 0xFFC25A, bot = 0xF08A1C;
-    else if ([kind isEqual:@"folders"]) top = 0x6FB8F5, bot = 0x2C7FD6;
-    else if ([kind isEqual:@"community"]) top = 0x5FD0F0, bot = 0x1E96C8;
-    else if ([kind isEqual:@"quick"]) top = 0xF78FB3, bot = 0xD9467A;
-    else top = 0xA9B2BC, bot = 0x76808B;
+    // D37: ô vuông bo một màu phẳng (như Cài đặt iOS 26), hình trắng
+    int top;
+    if ([kind isEqual:@"saved"]) top = 0x2F7DF6;
+    else if ([kind isEqual:@"proxy"]) top = 0x0E8F80;
+    else if ([kind isEqual:@"storage"]) top = 0x2F9E4F;
+    else if ([kind isEqual:@"notify"]) top = 0xE5484D;
+    else if ([kind isEqual:@"lock"]) top = 0x6E6E76;
+    else if ([kind isEqual:@"theme"]) top = 0x5B5BD6;
+    else if ([kind isEqual:@"stickers"]) top = 0xD9437E;
+    else if ([kind isEqual:@"folders"]) top = 0x0F9BB0;
+    else if ([kind isEqual:@"community"]) top = 0x2F7DF6;
+    else if ([kind isEqual:@"quick"]) top = 0xE08600;
+    else top = 0x7A7A80;
     img = GMDraw(CGSizeMake(29, 29), ^(CGContextRef ctx) {
-        UIBezierPath *sq = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0.5, 0.5, 28, 28) cornerRadius:6.5];
-        GMFillGradient(ctx, sq, CGRectMake(0, 0, 29, 29), @[RGB(top), RGB(bot)], NULL);
-        [RGBA(0x000000, 0.22) setStroke];
-        sq.lineWidth = 1;
-        [sq stroke];
+        UIBezierPath *sq = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, 29, 29) cornerRadius:7.5];
+        [RGB(top) setFill];
+        [sq fill];
         [[UIColor whiteColor] set];
         if ([kind isEqual:@"saved"]) {
             // Dấu trang: chữ nhật có khía chữ V ở đáy
@@ -1226,7 +1740,7 @@ static NSDateComponents *GMDay(NSDate *d) {
         } else if ([kind isEqual:@"stickers"]) {
             // Mặt cười: tròn trắng, mắt + miệng màu cam đậm
             CGContextFillEllipseInRect(ctx, CGRectMake(6, 6, 17, 17));
-            [RGB(0xD9741A) set];
+            [RGB(top) set];
             CGContextFillEllipseInRect(ctx, CGRectMake(10.2, 10.5, 2.4, 3));
             CGContextFillEllipseInRect(ctx, CGRectMake(16.4, 10.5, 2.4, 3));
             CGContextSetLineWidth(ctx, 1.6);
@@ -1278,8 +1792,6 @@ static NSDateComponents *GMDay(NSDate *d) {
             CGContextFillEllipseInRect(ctx, CGRectMake(13.4, 9, 2.2, 2.2));
             CGContextFillRect(ctx, CGRectMake(13.5, 12.5, 2, 7));
         }
-        // Vệt bóng nửa trên
-        GMFillGradient(ctx, sq, CGRectMake(0, 0, 29, 14), @[RGBA(0xFFFFFF, 0.45), RGBA(0xFFFFFF, 0.1)], NULL);
     });
     [cache setObject:img forKey:kind];
     return img;
@@ -1411,11 +1923,9 @@ static NSString *GMGrouped(long long n) {
     [b setTitleColor:[UIColor colorWithWhite:1 alpha:0.5] forState:UIControlStateHighlighted];
     [b setTitleColor:[UIColor colorWithWhite:1 alpha:0.6] forState:UIControlStateDisabled];
     b.titleLabel.font = [UIFont boldSystemFontOfSize:17];
-    // Nút xanh bóng kiểu iOS 6 (cùng ảnh với nút «Gửi»: cao 44, viên giữa cao 32)
+    // Nút xanh phẳng (cao 44, viên giữa cao 32 bo tròn)
     [b setBackgroundImage:[self sendButtonImage:NO] forState:UIControlStateNormal];
     [b setBackgroundImage:[self sendButtonImage:YES] forState:UIControlStateHighlighted];
-    [b setTitleShadowColor:[UIColor colorWithWhite:0 alpha:0.35] forState:UIControlStateNormal];
-    b.titleLabel.shadowOffset = CGSizeMake(0, -1);
     b.adjustsImageWhenHighlighted = NO;
     return b;
 }

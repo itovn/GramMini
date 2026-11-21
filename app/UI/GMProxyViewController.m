@@ -21,6 +21,14 @@
     return l;
 }
 
+/// iPad: viewDidLoad còn bề ngang cả màn (cột trái 320 đặt sau) — xếp hai nút theo bề ngang thật.
+- (void)viewWillLayoutSubviews {
+    [super viewWillLayoutSubviews];
+    CGFloat w = self.view.bounds.size.width, bw = floor((w - 50) / 2);
+    _test.frame = CGRectMake(20, 122, bw, 42);
+    _save.frame = CGRectMake(30 + bw, 122, bw, 42);
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"Proxy";

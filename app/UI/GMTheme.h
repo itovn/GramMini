@@ -1,8 +1,9 @@
 #import <UIKit/UIKit.h>
 
-/// Giao diện iOS 6 + kính trong (D23): bố cục Telegram 4.9; thanh trên bóng kiểu iOS 6 (nút viền nổi, nút quay lại hình mũi tên),
-/// thanh dưới kính khói, bảng / bong bóng kính mờ trên hình nền loang màu. Mọi ảnh tự vẽ bằng CoreGraphics lúc chạy — chạy cả
-/// iOS 5 / 6 (không có làm mờ thời gian thực: «kính» = lớp bán trong suốt trên hình nền tĩnh).
+/// Giao diện «kính lỏng» kiểu iOS 26 / Telegram 12 (D37, thay D23): trang trơn trắng / đen, thanh trên không nền với nút viên
+/// kính, thanh dưới viên kính nổi, bảng nhóm bo góc, bong bóng phẳng trên hình nền loang màu (màn chat). Mọi ảnh tự vẽ bằng
+/// CoreGraphics lúc chạy — chạy cả iOS 5 / 6 (không có làm mờ thời gian thực: «kính» = lớp bán trong suốt + viền sáng + bóng đổ
+/// trên nền tĩnh; nội dung tan ở mép thanh bằng dải ảnh tĩnh).
 typedef NS_ENUM(NSInteger, GMThemeMode) { GMThemeLight, GMThemeDark, GMThemeAuto };
 
 @interface GMTheme : NSObject
@@ -53,7 +54,34 @@ typedef NS_ENUM(NSInteger, GMThemeMode) { GMThemeLight, GMThemeDark, GMThemeAuto
 /// Biểu tượng nét mảnh theo màu cho trước.
 + (UIImage *)icon:(NSString *)name color:(UIColor *)color;
 + (UIColor *)accent;
+/// Nền trang trơn (danh sách) / bảng nhóm (Cài đặt…).
 + (UIColor *)background;
++ (UIColor *)groupedBackground;
+/// Nền số chưa đọc (không tắt tiếng).
++ (UIColor *)badgeColor;
+/// Chữ trên viên ngày / tin hệ thống (pillBackground).
++ (UIColor *)pillText;
+/// Giờ trong bong bóng tin vào / ra.
++ (UIColor *)bubbleTime:(BOOL)outgoing;
+/// Viên kính tròn (ảnh `size` × `size`, chừa bóng 2 pt): nút biểu tượng.
++ (UIImage *)glassButton:(CGFloat)size pressed:(BOOL)pressed;
+/// Viên kính co giãn cao `h` (chừa bóng: trên 0,5, dưới 2,5, hai bên 1).
++ (UIImage *)glassImage:(CGFloat)h;
+/// Tấm kính bo góc 14 co giãn hai chiều (menu giữ tin, bảng đính kèm) — chừa bóng như glassImage:.
++ (UIImage *)glassPanel;
+/// Tấm kính bo góc 26 (bảng đính kèm nổi ở đáy).
++ (UIImage *)glassSheet;
+/// Nút gửi: tròn xanh, mũi tên trắng (ảnh 40 × 40).
++ (UIImage *)sendCircle:(BOOL)pressed;
+/// Nút chữ viên kính cao 38 cho thanh trên («Sửa»…); đổi chữ bằng setBarButton:title: (tự co giãn bề ngang).
++ (UIButton *)barButtonTitle:(NSString *)title target:(id)target action:(SEL)action;
++ (void)setBarButton:(UIButton *)button title:(NSString *)title;
+/// Nút quay lại viên kính có số chưa đọc (màn chat): 0 = tròn chỉ mũi tên; > 0 = mũi tên + viên xanh có số.
++ (UIButton *)backButton:(id)target action:(SEL)action;
++ (void)setBackButton:(UIButton *)button count:(NSInteger)count;
+/// Đặt nền thanh trên (theo màu trang / lát hình nền) + dải mờ dưới thanh, màu hai bên thanh dưới — tự gọi ở viewWillAppear: của
+/// mọi màn GM…; màn chat gọi lại khi xoay (bề ngang thanh đổi).
++ (void)styleBarsFor:(UIViewController *)vc animated:(BOOL)animated;
 + (UIColor *)chatBackground;
 + (UIColor *)secondaryText;
 + (UIColor *)separator;

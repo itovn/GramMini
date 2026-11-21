@@ -211,6 +211,10 @@ static void GMFindText(UIView *v, NSString *text) {
         GMLog(@"[thử] bảng tạm: %lu ký tự", (unsigned long)[UIPasteboard generalPasteboard].string.length);
     } else if ([cmd isEqual:@"menumsg"] && [top isKindOfClass:[GMChatViewController class]]) {
         [(GMChatViewController *)top debugMenuFromBottom:arg.integerValue];
+    } else if ([cmd isEqual:@"attach"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugAttach:arg];  // attach open | attach sel <i> | attach close
+    } else if ([cmd isEqual:@"menutap"] && [top isKindOfClass:[GMChatViewController class]]) {
+        [(GMChatViewController *)top debugMenuTap:arg.integerValue];  // menutap <i> — mục thứ i của menu giữ tin
     } else if ([cmd isEqual:@"replymsg"] && [top isKindOfClass:[GMChatViewController class]]) {
         [(GMChatViewController *)top debugReplyFromBottom:arg.integerValue];
     } else if ([cmd isEqual:@"react"] && [top isKindOfClass:[GMChatViewController class]]) {

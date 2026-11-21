@@ -3,16 +3,18 @@
 #define GMDialogRowH 72
 #define GMDialogAvatar 54
 
-/// Ô một chat (kiểu Telegram 4.9): ảnh đại diện tròn, tên, giờ + dấu đã đọc, xem trước, số chưa đọc / ghim, vạch kẻ thụt.
-/// Các ô ghép thành một thẻ kính lề 8 pt (hàng đầu / cuối bo góc). Cao GMDialogRowH, ảnh GMDialogAvatar. Dùng cả cho danh sách
-/// chủ đề của nhóm diễn đàn.
+/// Ô một chat (bố cục Telegram, D37): hàng phẳng theo trang, ảnh đại diện tròn, tên (+ loa gạch nếu tắt tiếng), giờ + dấu đã
+/// đọc, xem trước hai dòng, số chưa đọc / ghim, vạch kẻ mảnh thụt tới chữ. Cao GMDialogRowH, ảnh GMDialogAvatar. Dùng cả cho
+/// danh sách chủ đề của nhóm diễn đàn.
 @interface GMDialogCell : UITableViewCell
 @property (nonatomic, strong) UIImageView *avatar, *badgeBg;
+/// Loa gạch chéo cạnh giờ (chat tắt tiếng).
+@property (nonatomic) BOOL muted;
 @property (nonatomic) BOOL first, last;
 @property (nonatomic, strong) UILabel *name, *time, *check, *sender, *preview, *badge, *pin;
 @property (nonatomic, strong) UIView *line;
 @property (nonatomic, copy) NSString *peerKey;  // ô đang hiện chat nào (ô dùng lại)
-/// Hàng đầu / cuối của thẻ (bo góc trên / dưới).
+/// Hàng cuối: không vạch kẻ.
 - (void)setFirst:(BOOL)first last:(BOOL)last;
 @end
 

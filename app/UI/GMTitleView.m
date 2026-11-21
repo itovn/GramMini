@@ -4,6 +4,7 @@
 @implementation GMTitleView {
     UILabel *_t, *_s;
     UIActivityIndicatorView *_spin;
+    UIImageView *_bg;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -21,7 +22,7 @@
         [self addSubview:_t];
         _s = [[UILabel alloc] init];
         _s.font = [UIFont systemFontOfSize:12];
-        _s.textColor = [GMTheme dark] ? [GMTheme secondaryText] : [UIColor colorWithRed:0.33 green:0.4 blue:0.48 alpha:1];
+        _s.textColor = [GMTheme secondaryText];
         _s.shadowColor = [[GMTheme navTitleShadow] colorWithAlphaComponent:0.6];
         _s.shadowOffset = [GMTheme navShadowOffset];
         _s.textAlignment = GMAlignCenter;
@@ -45,6 +46,16 @@
     [self setNeedsLayout];
 }
 
+- (void)setGlass:(BOOL)glass {
+    _glass = glass;
+    if (glass && !_bg) {
+        _bg = [[UIImageView alloc] initWithImage:[GMTheme glassImage:40]];
+        [self insertSubview:_bg atIndex:0];
+    }
+    _bg.hidden = !glass;
+    [self setNeedsLayout];
+}
+
 - (void)setConnecting:(BOOL)connecting {
     _connecting = connecting;
     [self setNeedsLayout];
@@ -61,13 +72,23 @@
     _t.text = title;
     _s.text = sub;
     _s.hidden = sub.length == 0;
-    // Một dòng: chữ lớn như tiêu đề iOS 6; hai dòng: tên + dòng phụ
-    _t.font = [UIFont boldSystemFontOfSize:_s.hidden ? 20 : 17];
+    // Một dòng: tiêu đề đậm 17 (iOS 26); hai dòng: tên + dòng phụ
+    _t.font = [UIFont boldSystemFontOfSize:_s.hidden ? 17 : 15];
     if (_s.hidden) {
         _t.frame = CGRectMake(0, 0, w, h);
     } else {
-        _t.frame = CGRectMake(0, 1, w, 21);
-        _s.frame = CGRectMake(0, 22, w, 15);
+        _t.frame = CGRectMake(0, 2, w, 19);
+        _s.frame = CGRectMake(0, 20, w, 15);
+    }
+    if (_glass) {
+        // Viên kính ôm chữ (dòng dài nhất + lề 18 mỗi bên), chữ dài thì kính rộng hết khung
+        CGFloat tw = MAX([_t.text sizeWithFont:_t.font].width, _s.hidden ? 0 : [_s.text sizeWithFont:_s.font].width);
+        if (self.connecting) tw += 24;
+        CGFloat gw = MIN(w, MAX(80, ceil(tw) + 36));
+        _bg.frame = CGRectMake(floor((w - gw) / 2), floor((h - 40) / 2), gw, 40);
+        CGRect inner = CGRectInset(_bg.frame, 16, 0);
+        _t.frame = CGRectMake(inner.origin.x, _t.frame.origin.y - 1, inner.size.width, _t.frame.size.height);
+        _s.frame = CGRectMake(inner.origin.x, _s.frame.origin.y - 1, inner.size.width, _s.frame.size.height);
     }
     // Vòng quay ngay trước chữ «Đang kết nối…»
     if (self.connecting) {

@@ -15,9 +15,11 @@
 #import "GMTopicsViewController.h"
 #import <QuartzCore/QuartzCore.h>
 
-static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
+static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kFolderBarH = 50;
 
-@implementation GMDialogCell
+@implementation GMDialogCell {
+    UIImageView *_muteIcon, *_pinIcon, *_checkIcon;
+}
 
 - (UILabel *)label:(UIFont *)f color:(UIColor *)c {
     UILabel *l = [[UILabel alloc] init];
@@ -31,10 +33,13 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
 
 - (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)rid {
     if ((self = [super initWithStyle:style reuseIdentifier:rid])) {
+        // Hàng phẳng theo trang (D37); ô tự lo nền — bảng chung không đè
         self.tag = GMTagOwnBackground;
-        self.backgroundColor = [UIColor clearColor];
+        self.backgroundColor = [GMTheme background];
         self.backgroundView = [[UIImageView alloc] init];
+        self.backgroundView.backgroundColor = [GMTheme background];
         self.selectedBackgroundView = [[UIImageView alloc] init];
+        self.selectedBackgroundView.backgroundColor = [GMTheme selectedCell];
         _avatar = [[UIImageView alloc] init];
         [self.contentView addSubview:_avatar];
         _name = [self label:[UIFont boldSystemFontOfSize:16] color:[GMTheme text]];
@@ -48,36 +53,56 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
         [self.contentView addSubview:_badgeBg];
         _badge = [self label:[UIFont boldSystemFontOfSize:13] color:[UIColor whiteColor]];
         _badge.textAlignment = GMAlignCenter;
-        _badge.shadowColor = [UIColor colorWithWhite:0 alpha:0.3];
-        _badge.shadowOffset = CGSizeMake(0, -1);
+        // Ghim: nhãn rỗng làm khung (chỗ gọi cũ bật / tắt .hidden), trong là biểu tượng vẽ tay (thay emoji 📌)
         _pin = [self label:[UIFont systemFontOfSize:13] color:[GMTheme secondaryText]];
-        _pin.text = @"📌";
+        _pinIcon = [[UIImageView alloc] initWithImage:[GMTheme icon:@"pin" color:[GMTheme secondaryText]]];
+        _pinIcon.frame = CGRectMake(-4, -3, 26, 26);
+        [_pin addSubview:_pinIcon];
+        _muteIcon = [[UIImageView alloc] initWithImage:[GMTheme icon:@"muted" color:[GMTheme secondaryText]]];
+        _muteIcon.hidden = YES;
+        [self.contentView addSubview:_muteIcon];
+        // ✓ / ✓✓: nhãn giữ chữ (chỗ gọi đặt .text / .hidden), hiện bằng hình vẽ
+        _check.textColor = [UIColor clearColor];
+        _checkIcon = [[UIImageView alloc] init];
+        [self.contentView addSubview:_checkIcon];
         _line = [[UIView alloc] init];
-        _line.backgroundColor = [GMTheme glassLine];
+        _line.backgroundColor = [GMTheme separator];
         [self.contentView addSubview:_line];
     }
     return self;
 }
 
-/// Hàng đầu / cuối của thẻ (bo góc trên / dưới).
+/// Hàng cuối: không vạch kẻ.
 - (void)setFirst:(BOOL)first last:(BOOL)last {
     _first = first;
     _last = last;
-    ((UIImageView *)self.backgroundView).image = [GMTheme cardRow:first last:last selected:NO];
-    ((UIImageView *)self.selectedBackgroundView).image = [GMTheme cardRow:first last:last selected:YES];
+    self.backgroundView.backgroundColor = [GMTheme background];
     _line.hidden = last;
+}
+
+- (void)setMuted:(BOOL)muted {
+    _muted = muted;
+    _muteIcon.hidden = !muted;
+    [self setNeedsLayout];
 }
 
 - (void)layoutSubviews {
     [super layoutSubviews];
-    // Toạ độ trong thẻ: lề thẻ 8 + lề trong 10
-    CGFloat w = self.contentView.bounds.size.width - kCard, x0 = kCard + 10, x = x0 + kAvatar + 10;
+    // Hàng phẳng (D37): ảnh cách mép 10, chữ cách ảnh 10, lề phải 12
+    CGFloat w = self.contentView.bounds.size.width - 2, x0 = 10, x = x0 + kAvatar + 10;
     _avatar.frame = CGRectMake(x0, (kRowH - kAvatar) / 2, kAvatar, kAvatar);
     CGFloat tw = [_time.text sizeWithFont:_time.font].width;
     _time.frame = CGRectMake(w - 10 - tw, 10, tw, 18);
-    CGFloat cw = _check.hidden ? 0 : [_check.text sizeWithFont:_check.font].width + 3;
+    CGFloat cw = _check.hidden ? 0 : 20;
     _check.frame = CGRectMake(w - 10 - tw - cw, 10, cw, 18);
-    _name.frame = CGRectMake(x, 8, w - x - tw - cw - 16, 21);
+    _checkIcon.hidden = _check.hidden;
+    if (!_check.hidden) {
+        _checkIcon.image = [GMTheme icon:[_check.text isEqual:@"✓✓"] ? @"read" : @"sent" color:[GMTheme checkColor]];
+        _checkIcon.frame = CGRectMake(w - 10 - tw - 25, 6, 26, 26);
+    }
+    CGFloat mw = _muteIcon.hidden ? 0 : 18;
+    _muteIcon.frame = CGRectMake(w - 10 - tw - cw - 25, 6, 26, 26);
+    _name.frame = CGRectMake(x, 8, w - x - tw - cw - mw - 16, 21);
     CGFloat right = 10;
     _badgeBg.hidden = _badge.hidden;
     if (!_badge.hidden) {
@@ -97,7 +122,8 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
         _preview.numberOfLines = 1;
         _preview.frame = CGRectMake(x, 49, w - x - right, 19);
     }
-    _line.frame = CGRectMake(x, kRowH - 1, w - x - 1, 1);
+    CGFloat px = 1 / [UIScreen mainScreen].scale;
+    _line.frame = CGRectMake(x, kRowH - px, self.contentView.bounds.size.width - x, px);
 }
 
 @end
@@ -106,6 +132,7 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
 @end
 
 @implementation GMChatListViewController {
+    UIButton *_editBtn;      // «Sửa» / «Xong» (viên kính)
     NSMutableArray *_dialogs;  // NSMutableDictionary: peer, name, kind, unread, pinned, muted, read_out, last
     BOOL _loading;
     id _refresh;  // UIRefreshControl (iOS 6) — iOS 5 dùng nút làm mới
@@ -135,8 +162,8 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
     self.tableView.rowHeight = kRowH;
     self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
     // «Sửa»: bật / tắt chế độ xoá (nút đỏ bên trái mỗi chat); Cài đặt nằm ở thanh dưới
-    self.navigationItem.leftBarButtonItem =
-        [[UIBarButtonItem alloc] initWithTitle:@"Sửa" style:UIBarButtonItemStyleBordered target:self action:@selector(toggleEdit)];
+    _editBtn = [GMTheme barButtonTitle:@"Sửa" target:self action:@selector(toggleEdit)];
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:_editBtn];
     // Nút biểu tượng tự vẽ (ảnh của nút hệ thống iOS 5 / 6 bị tô trắng)
     UIBarButtonItem *compose = [GMTheme barButtonIcon:@"compose" target:self action:@selector(compose)];
     self.navigationItem.backBarButtonItem =
@@ -152,11 +179,11 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
         UIBarButtonItem *reload = [GMTheme barButtonIcon:@"refresh" target:self action:@selector(reload)];
         self.navigationItem.rightBarButtonItems = @[compose, reload];
     }
-    // Ô tìm kiếm (kéo xuống mới thấy, như Telegram 4.9): chat đã có + trên Telegram + tin nhắn
+    // Ô tìm kiếm ở đầu danh sách (bản mẫu D37): chat đã có + trên Telegram + tin nhắn
     UISearchBar *bar = [[UISearchBar alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 44)];
     bar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    bar.placeholder = @"Tìm kiếm";
     self.tableView.tableHeaderView = bar;
-    self.tableView.contentOffset = CGPointMake(0, 44);
     _search = [[GMSearchController alloc] initWithSearchBar:bar contents:self];
     _search.messages = YES;
     __weak GMChatListViewController *ws = self;
@@ -231,7 +258,7 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
 - (void)toggleEdit {
     BOOL on = !self.tableView.editing;
     [self.tableView setEditing:on animated:YES];
-    self.navigationItem.leftBarButtonItem.title = on ? @"Xong" : @"Sửa";
+    [GMTheme setBarButton:_editBtn title:on ? @"Xong" : @"Sửa"];
 }
 
 - (void)compose {
@@ -714,47 +741,66 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
     [self.tableView reloadData];
 }
 
+/// Dải thư mục (đầu mục 0 — dính dưới thanh trên khi cuộn): nền trang, giữa là viên kính chứa các thẻ; thẻ đang chọn có viên
+/// nền + chữ đậm màu chủ đạo, số chat chưa đọc trong viên xanh nhỏ (bản mẫu D37).
 - (void)buildFolderBar {
     if (!_folders.count) return;
     if (!_folderBar) {
-        _folderBar = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.tableView.bounds.size.width, 40)];
+        _folderBar = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.tableView.bounds.size.width, kFolderBarH)];
         _folderBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-        UIImageView *bg = [[UIImageView alloc] initWithFrame:_folderBar.bounds];
-        bg.image = [GMTheme glassBar];
-        bg.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        [_folderBar addSubview:bg];
-        _folderScroll = [[UIScrollView alloc] initWithFrame:_folderBar.bounds];
+        _folderBar.backgroundColor = [GMTheme background];
+        UIImageView *glass = [[UIImageView alloc] initWithFrame:CGRectMake(11, 4, _folderBar.bounds.size.width - 22, 40)];
+        glass.image = [GMTheme glassImage:40];
+        glass.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [_folderBar addSubview:glass];
+        _folderScroll = [[UIScrollView alloc] initWithFrame:CGRectMake(14, 4.5, _folderBar.bounds.size.width - 28, 34)];
         _folderScroll.autoresizingMask = UIViewAutoresizingFlexibleWidth;
         _folderScroll.showsHorizontalScrollIndicator = NO;
         _folderScroll.scrollsToTop = NO;
         [_folderBar addSubview:_folderScroll];
     }
     for (UIView *v in _folderScroll.subviews) [v removeFromSuperview];
-    CGFloat x = 8;
+    CGFloat x = 0;
     for (NSInteger i = 0; i <= (NSInteger)_folders.count; i++) {
         NSDictionary *f = i ? [_folders objectAtIndex:i - 1] : nil;
         NSString *title = f ? GMVal(f, @"title") : @"Tất cả";
         NSInteger unread = [self unreadChatsIn:f ? [self dialogsInFolder:f] : _dialogs];
-        if (unread) title = [NSString stringWithFormat:@"%@  %ld", title, (long)unread];
+        BOOL sel = i == _folder;
         UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
         b.tag = 100 + i;
-        b.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+        b.titleLabel.font = sel ? [UIFont boldSystemFontOfSize:14] : [UIFont systemFontOfSize:14];
         [b setTitle:title forState:UIControlStateNormal];
-        BOOL sel = i == _folder;
-        [b setTitleColor:sel ? [GMTheme accent] : [GMTheme secondaryText] forState:UIControlStateNormal];
-        CGFloat w = [title sizeWithFont:b.titleLabel.font].width + 24;
-        b.frame = CGRectMake(x, 6, w, 28);
-        b.layer.cornerRadius = 14;
+        [b setTitleColor:sel ? [GMTheme accent] : [GMTheme text] forState:UIControlStateNormal];
+        CGFloat tw = ceil([title sizeWithFont:b.titleLabel.font].width), bw = 0;
+        UILabel *n = nil;
+        if (unread) {
+            n = [[UILabel alloc] init];
+            n.text = [NSString stringWithFormat:@"%ld", (long)unread];
+            n.font = [UIFont boldSystemFontOfSize:11];
+            n.textColor = [UIColor whiteColor];
+            n.textAlignment = GMAlignCenter;
+            n.backgroundColor = [UIColor clearColor];
+            bw = MAX(18, ceil([n.text sizeWithFont:n.font].width) + 10);
+        }
+        CGFloat w = tw + 24 + (bw ? bw + 5 : 0);
+        b.frame = CGRectMake(x, 2, w, 30);
+        b.titleEdgeInsets = UIEdgeInsetsMake(0, 0, 0, bw ? bw + 5 : 0);
         if (sel) {
-            b.backgroundColor = [GMTheme glassGrouped];
-            b.layer.borderWidth = 1;
-            b.layer.borderColor = [GMTheme glassLine].CGColor;
+            b.backgroundColor = [GMTheme dark] ? [UIColor colorWithWhite:1 alpha:0.14] : [UIColor colorWithWhite:0 alpha:0.075];
+            b.layer.cornerRadius = 15;
+        }
+        if (n) {
+            UIImageView *nb = [[UIImageView alloc] initWithImage:[GMTheme badgeImage:NO]];
+            nb.frame = CGRectMake(12 + tw + 5, 6, bw, 18);
+            n.frame = nb.bounds;
+            [nb addSubview:n];
+            [b addSubview:nb];
         }
         [b addTarget:self action:@selector(folderTapped:) forControlEvents:UIControlEventTouchUpInside];
         [_folderScroll addSubview:b];
-        x += w + 4;
+        x += w + 2;
     }
-    _folderScroll.contentSize = CGSizeMake(x + 8, 40);
+    _folderScroll.contentSize = CGSizeMake(x, 34);
 }
 
 - (void)folderTapped:(UIButton *)b {
@@ -774,7 +820,7 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
 }
 
 - (CGFloat)tableView:(UITableView *)tv heightForHeaderInSection:(NSInteger)section {
-    return _folders.count ? 40 : 0;
+    return _folders.count ? kFolderBarH : 0;
 }
 
 /// Nhấn giữ → «Thêm vào thư mục…»: chọn thư mục rồi đưa chat vào (bỏ khỏi danh sách loại trừ nếu có).
@@ -848,8 +894,6 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
             [_login setBackgroundImage:[GMTheme sendButtonImage:NO] forState:UIControlStateNormal];
             [_login setBackgroundImage:[GMTheme sendButtonImage:YES] forState:UIControlStateHighlighted];
             [_login setTitle:@"Đăng nhập" forState:UIControlStateNormal];
-            [_login setTitleShadowColor:[UIColor colorWithWhite:0 alpha:0.35] forState:UIControlStateNormal];
-            _login.titleLabel.shadowOffset = CGSizeMake(0, -1);
             _login.titleLabel.font = [UIFont boldSystemFontOfSize:16];
             _login.adjustsImageWhenHighlighted = NO;
             _login.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
@@ -891,7 +935,8 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
             if ([wc.peerKey isEqual:peer]) wc.avatar.image = img;
         }];
     }
-    c.name.text = [GMVal(d, @"muted") boolValue] ? [name stringByAppendingString:@" 🔇"] : name;
+    c.name.text = name;
+    c.muted = [GMVal(d, @"muted") boolValue];
     c.time.text = [GMTheme shortTime:GMVal(last, @"date")];
     // ✓ đã gửi, ✓✓ đã đọc (tin cuối là của mình, không phải Tin nhắn đã lưu / tin hệ thống)
     BOOL mine = [GMVal(last, @"out") boolValue] && !saved && ![GMVal(last, @"service") boolValue];
@@ -917,9 +962,7 @@ static const CGFloat kRowH = GMDialogRowH, kAvatar = GMDialogAvatar, kCard = 8;
     [c setFirst:indexPath.row == 0 last:indexPath.row == (NSInteger)_shown.count - 1];
     // iPad: tô hàng của chat đang mở bên phải
     NSString *open = [(GMAppDelegate *)[UIApplication sharedApplication].delegate openPeer];
-    if (open && [[GMVal(d, @"peer") description] isEqual:open]) {
-        ((UIImageView *)c.backgroundView).image = [GMTheme cardRow:c.first last:c.last selected:YES];
-    }
+    if (open && [[GMVal(d, @"peer") description] isEqual:open]) c.backgroundView.backgroundColor = [GMTheme selectedCell];
     [c setNeedsLayout];
     return c;
 }

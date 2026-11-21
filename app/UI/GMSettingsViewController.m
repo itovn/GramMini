@@ -37,6 +37,13 @@ static NSArray *GMSettingsRows(void) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"Cài đặt";
+    self.navigationItem.titleView = [[UIView alloc] initWithFrame:CGRectZero];  // như bản mẫu: đầu trang là hồ sơ, không tiêu đề
+    UIButton *edit = [GMTheme barButtonTitle:@"Sửa" target:self action:@selector(openProfile)];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:edit];
+}
+
+- (void)openProfile {
+    [self.navigationController pushViewController:[[GMProfileViewController alloc] init] animated:YES];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -60,7 +67,7 @@ static NSArray *GMSettingsRows(void) {
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)ip {
-    return ip.section == GMSecProfile ? 80 : 44;
+    return ip.section == GMSecProfile ? 156 : 46;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
@@ -82,25 +89,43 @@ static NSArray *GMSettingsRows(void) {
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)ip {
     UITableViewCell *c;
     if (ip.section == GMSecProfile) {
-        c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+        // Đầu trang (D37): ảnh 84 ở giữa, tên, «số điện thoại · @tên» — không nền ô; chạm → hồ sơ
+        c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+        c.tag = GMTagOwnBackground;
+        c.backgroundView = [[UIView alloc] init];
+        c.backgroundColor = [UIColor clearColor];
+        c.selectionStyle = UITableViewCellSelectionStyleNone;
+        CGFloat W = tableView.bounds.size.width;
         NSString *name = GMVal(_me, @"name") ?: @"…";
-        c.imageView.image = [GMTheme avatarFor:GMVal(_me, @"id") ?: @"0" name:name size:60];
+        UIImageView *av = [[UIImageView alloc] initWithFrame:CGRectMake(floor((W - 84) / 2), 4, 84, 84)];
+        av.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
+        av.image = [GMTheme avatarFor:GMVal(_me, @"id") ?: @"0" name:name size:84];
         if (GMVal(_me, @"photo")) {
-            __weak UITableViewCell *wc = c;
-            [GMImages avatarForPeer:GMVal(_me, @"id") photo:GMVal(_me, @"photo") dc:GMVal(_me, @"photo_dc") size:60
+            __weak UIImageView *wav = av;
+            [GMImages avatarForPeer:GMVal(_me, @"id") photo:GMVal(_me, @"photo") dc:GMVal(_me, @"photo_dc") size:84
                                done:^(UIImage *img) {
-                                   wc.imageView.image = img;
-                                   [wc setNeedsLayout];
+                                   if (img) wav.image = img;
                                }];
         }
-        c.textLabel.text = name;
-        c.textLabel.font = [UIFont boldSystemFontOfSize:19];
+        [c.contentView addSubview:av];
+        UILabel *n = [[UILabel alloc] initWithFrame:CGRectMake(10, 96, W - 20, 27)];
+        n.text = name;
+        n.font = [UIFont boldSystemFontOfSize:22];
+        n.textColor = [GMTheme text];
+        n.textAlignment = GMAlignCenter;
+        n.backgroundColor = [UIColor clearColor];
+        n.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [c.contentView addSubview:n];
         NSString *u = GMVal(_me, @"username");
         NSString *phone = [self prettyPhone:GMVal(_me, @"phone")];
-        c.detailTextLabel.text = u.length ? [NSString stringWithFormat:@"%@\n@%@", phone, u] : phone;
-        c.detailTextLabel.numberOfLines = 2;
-        c.detailTextLabel.textColor = [GMTheme secondaryText];
-        c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        UILabel *d = [[UILabel alloc] initWithFrame:CGRectMake(10, 124, W - 20, 20)];
+        d.text = u.length ? [NSString stringWithFormat:@"%@ · @%@", phone, u] : phone;
+        d.font = [UIFont systemFontOfSize:15];
+        d.textColor = [GMTheme secondaryText];
+        d.textAlignment = GMAlignCenter;
+        d.backgroundColor = [UIColor clearColor];
+        d.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [c.contentView addSubview:d];
         return c;
     }
     c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];

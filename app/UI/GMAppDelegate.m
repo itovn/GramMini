@@ -31,19 +31,21 @@ NSString *const GMOpenChatChangedNotification = @"GMOpenChatChanged";
     UIView *box = [[UIView alloc] initWithFrame:CGRectMake(floor((b.size.width - 300) / 2), floor((b.size.height - 90) / 2) - 20, 300, 90)];
     box.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin |
                            UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
-    box.backgroundColor = [GMTheme pillBackground];
-    box.layer.cornerRadius = 14;
+    // Viên kính (D37) trên hình nền
+    UIImageView *glass = [[UIImageView alloc] initWithFrame:CGRectInset(box.bounds, -1, -1)];
+    glass.image = [GMTheme glassImage:44];
+    [box addSubview:glass];
     UILabel *t = [[UILabel alloc] initWithFrame:CGRectMake(10, 14, 280, 24)];
     t.text = @"Chọn một cuộc trò chuyện";
     t.font = [UIFont boldSystemFontOfSize:18];
-    t.textColor = [UIColor whiteColor];
+    t.textColor = [GMTheme text];
     t.textAlignment = GMAlignCenter;
     t.backgroundColor = [UIColor clearColor];
     [box addSubview:t];
     UILabel *s = [[UILabel alloc] initWithFrame:CGRectMake(10, 40, 280, 40)];
     s.text = @"Chạm một chat ở bên trái, hoặc nút soạn tin để nhắn cho người mới.";
     s.font = [UIFont systemFontOfSize:14];
-    s.textColor = [UIColor whiteColor];
+    s.textColor = [GMTheme secondaryText];
     s.numberOfLines = 2;
     s.textAlignment = GMAlignCenter;
     s.backgroundColor = [UIColor clearColor];
@@ -190,10 +192,8 @@ NSString *const GMOpenChatChangedNotification = @"GMOpenChatChanged";
     self.tabs = [[UITabBarController alloc] init];
     self.tabs.viewControllers = @[cn, self.nav, sn];
     self.tabs.selectedIndex = tab;
-    // Hình nền sau cùng: lộ ra dưới thanh trên / thanh dưới kính
-    GMWallpaperView *wall = [[GMWallpaperView alloc] initWithFrame:self.tabs.view.bounds];
-    wall.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [self.tabs.view insertSubview:wall atIndex:0];
+    // Hai bên viên kính của thanh dưới lộ màu trang (màn gốc của mục đổi màu này — GMTheme styleBarsFor:)
+    self.tabs.view.backgroundColor = [GMTheme background];
     if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
         // iPad: chia đôi như app Tin nhắn — bên trái thanh dưới (rộng 320 như iPhone), bên phải cuộc trò chuyện; luôn hiện cả
         // hai theo cả chiều dọc (delegate không cho ẩn bên trái)

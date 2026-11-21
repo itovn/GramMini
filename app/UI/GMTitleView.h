@@ -9,4 +9,6 @@
 @property (nonatomic) BOOL connecting;
 /// YES: «Đang kết nối…» thay cho tiêu đề (kiểu danh sách chat của Telegram); NO: thay dòng phụ.
 @property (nonatomic) BOOL replaceTitle;
+/// Viên kính sau chữ (màn chat, D37): bề ngang theo chữ, nằm giữa.
+@property (nonatomic) BOOL glass;
 @end
