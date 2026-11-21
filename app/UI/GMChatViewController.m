@@ -3879,7 +3879,7 @@ static NSDictionary *GMVideoInfo(NSURL *url) {
     if (card) {
         // Danh thiếp: vòng chữ cái đầu + tên + số điện thoại
         NSString *cn = [self contactName:card];
-        NSString *initial = cn.length ? [[cn substringToIndex:1] uppercaseString] : @"?";
+        NSString *initial = cn.length ? [[cn substringWithRange:[cn rangeOfComposedCharacterSequenceAtIndex:0]] uppercaseString] : @"?";
         c.docIcon.text = initial;
         c.docIcon.backgroundColor = [GMTheme colorFor:GMVal(card, @"user") ?: GMVal(card, @"phone") ?: @"0"];
         c.docIcon.frame = CGRectMake(cx, cy, 44, 44);

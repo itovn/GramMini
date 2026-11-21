@@ -955,6 +955,31 @@ static NSDateComponents *GMDay(NSDate *d) {
 
 #pragma mark - Khác
 
++ (NSString *)cut:(NSString *)s max:(NSUInteger)max {
+    if (s.length <= max) return s;
+    // Ký tự (ghép) chứa đơn vị thứ `max`: bắt đầu đúng ở `max` → cắt tại đó; vắt qua mốc → lùi về trước nó
+    NSUInteger end = [s rangeOfComposedCharacterSequenceAtIndex:max].location;
+    return [[self validUTF16:[s substringToIndex:end]] stringByAppendingString:@"…"];
+}
+
++ (NSString *)validUTF16:(NSString *)s {
+    if (!s.length || [s UTF8String]) return s;
+    NSUInteger n = s.length;
+    unichar *buf = malloc(n * sizeof(unichar));
+    if (!buf) return @"";
+    [s getCharacters:buf range:NSMakeRange(0, n)];
+    for (NSUInteger i = 0; i < n; i++) {
+        if (CFStringIsSurrogateHighCharacter(buf[i]) && i + 1 < n && CFStringIsSurrogateLowCharacter(buf[i + 1])) {
+            i++;
+            continue;
+        }
+        if (CFStringIsSurrogateHighCharacter(buf[i]) || CFStringIsSurrogateLowCharacter(buf[i])) buf[i] = 0xFFFD;
+    }
+    NSString *r = [[NSString alloc] initWithCharacters:buf length:n];
+    free(buf);
+    return r;
+}
+
 + (NSString *)preview:(NSDictionary *)msg {
     if (!msg) return @"";
     NSString *text = GMVal(msg, @"text") ?: @"";

@@ -514,3 +514,19 @@ Thiết kế đầy đủ: [THIET-KE.md](THIET-KE.md).
   «Restart SpringBoard». Mục `Icon:` của gói trỏ `Icon@2x.png` trong app nên Cydia tự đổi theo bản cài. Ảnh của trang (repo
   GramMini-site: `apple-touch-icon.png` 114, `favicon.png` 32, `img/icon.png` 256, `cydia/CydiaIcon.png` 120) xuất lại từ
   `icon-1024.png` bằng `make_icon.small`.
+
+## D36. Chữ thông báo không được cắt giữa emoji — SpringBoard iOS 6 sập, máy vào safe mode — 21/11/2026 (bản 1.4.5)
+
+- Anh báo iPhone 5 (iOS 6.1.4) vào safe mode. Nhật ký sập của SpringBoard (21/11 07:50:05 và một lần y hệt 19/11 20:24:57 — lần
+  đó máy không nạp tweak nào của Glass 6): `-[SBPushStore saveLocalNotification:forBundleID:]` →
+  `+[SBSystemLocalNotificationAlert localizedStringFromKey:defaultValue:inBundle:arguments:]` → hàm định dạng của SpringBoard gọi
+  `[chữ UTF8String]` rồi đọc byte đầu mà không kiểm NULL. Chữ không rỗng mà `UTF8String` trả NULL = chữ có **nửa cặp surrogate**
+  (emoji chiếm 2 đơn vị UTF-16). Cả hai lần trùng tới mili-giây với dòng «thông báo tin …» trong nhật ký của GramMini.
+- Nguồn: `notifyFor:` cắt xem trước `[body substringToIndex:180]` — tin dài > 180 đơn vị có emoji vắt qua mốc 180 → còn nửa
+  emoji → mọi app đẩy chữ như vậy đều làm SpringBoard iOS 6 sập (lỗi sẵn của iOS, không kiểm NULL).
+- Sửa: `+[GMTheme cut:max:]` cắt theo ranh giới ký tự ghép (`rangeOfComposedCharacterSequenceAtIndex:`), `+[GMTheme validUTF16:]`
+  thay nửa surrogate còn sót bằng U+FFFD; chữ thông báo luôn qua `validUTF16:` trước khi giao cho iOS. Các chỗ cắt chữ khác dùng
+  chung `cut:max:` (ghi chú bản cập nhật, giới thiệu nhóm từ link, tên bộ sticker; chữ cái đầu danh thiếp lấy cả ký tự ghép) —
+  ở đó nửa emoji chỉ vẽ ra ô lỗi, không sập, nhưng làm luôn cho đồng bộ.
+- Roza có cùng dòng cắt chữ (sửa ở bản Roza 1.2.1). Glass 6 (tweak giao diện) thêm chốt chặn trong SpringBoard: lọc nửa surrogate
+  trước khi SpringBoard dùng chữ của thông báo — máy cài Glass 6 không sập cả với app khác mắc lỗi này.

@@ -96,7 +96,7 @@
     NSMutableString *msg = [NSMutableString stringWithFormat:@"%@ · %@ %@", channel ? @"Kênh" : @"Nhóm",
                                                              GMVal(inv, @"members") ?: @0, channel ? @"người theo dõi" : @"thành viên"];
     NSString *about = GMVal(inv, @"about");
-    if (about.length) [msg appendFormat:@"\n\n%@", about.length > 300 ? [[about substringToIndex:300] stringByAppendingString:@"…"] : about];
+    if (about.length) [msg appendFormat:@"\n\n%@", [GMTheme cut:about max:300]];
     if (request) [msg appendString:@"\n\nNhóm này cần quản trị viên duyệt."];
     NSString *hash = GMVal(inv, @"hash");
     GMAlertShow(GMVal(inv, @"title") ?: @"Lời mời", msg, @"Huỷ", request ? @"Gửi yêu cầu" : (channel ? @"Tham gia kênh" : @"Tham gia nhóm"),

@@ -135,7 +135,7 @@ static UIView *GMTopView(void) {
     notes = [notes stringByReplacingOccurrencesOfString:@"\r" withString:@""];
     notes = [[@"\n" stringByAppendingString:notes] stringByReplacingOccurrencesOfString:@"\n- " withString:@"\n• "];
     notes = [notes stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if (notes.length > 500) notes = [[notes substringToIndex:500] stringByAppendingString:@"…"];
+    notes = [GMTheme cut:notes max:500];
     NSString *msg = [NSString stringWithFormat:@"Đang dùng bản %@.%@%@\n\nCập nhật xong máy sẽ tự khởi động lại màn hình chính "
                                                @"(respring) rồi mở lại GramMini.",
                                                cur, notes.length ? @"\n\n" : @"", notes];

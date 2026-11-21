@@ -81,6 +81,11 @@ typedef NS_ENUM(NSInteger, GMThemeMode) { GMThemeLight, GMThemeDark, GMThemeAuto
 + (BOOL)sameDay:(NSNumber *)a as:(NSNumber *)b;
 /// Nội dung xem trước của tin (chữ, hoặc «Ảnh, chú thích»…).
 + (NSString *)preview:(NSDictionary *)msg;
+/// Cắt chữ còn tối đa `max` đơn vị UTF-16 + «…», không cắt giữa một ký tự ghép (emoji = 2 đơn vị, chữ có dấu tổ hợp…).
+/// Nửa emoji làm `UTF8String` trả về NULL — SpringBoard iOS 6 sập (vào safe mode) khi lưu thông báo có chữ như vậy (D36).
++ (NSString *)cut:(NSString *)s max:(NSUInteger)max;
+/// Chữ đổi được sang UTF-8: thay nửa cặp surrogate còn sót bằng U+FFFD (chữ hợp lệ thì trả lại nguyên).
++ (NSString *)validUTF16:(NSString *)s;
 /// Emoji vẽ được trên máy này: phông Apple Color Emoji của iOS 5 / 6 thiếu emoji mới (Unicode 7+, chuỗi ghép ZWJ) — vẽ ra ô
 /// trống.
 + (BOOL)emojiRenders:(NSString *)emoji;

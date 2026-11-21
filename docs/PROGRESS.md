@@ -401,3 +401,18 @@ Anh đưa ảnh khối kính vuông bo góc + máy bay giấy, bảo làm biểu
   trong `app/Resources` (Icon, Icon@2x, Icon-72, Icon-72@2x, Icon-Small, Icon-Small@2x, Icon-Small-50, Icon-Small-50@2x).
 - Đã xem ảnh xuất trên nền tối / sáng: góc trong suốt sạch (không viền đen), máy bay giấy còn rõ ở cỡ 29.
 - Anh bảo phát hành luôn, không thử trên máy (chỉ đổi ảnh, không đổi mã).
+- Đã phát hành: GitHub Release v1.4.4 (gói 4 093 122 byte, SHA-256 `e922b47c482bc4c482e8cb21cb4624b99a482f5cb8d25bd13677c60f0c5418e5`
+  + `.deb.sig`), repo công khai 5f6e76b (thẻ v1.4.4), nguồn Cydia đã ký (1.4.2 / 1.4.3 / 1.4.4), trang mô tả + trang giới thiệu
+  (ảnh biểu tượng của trang cũng đổi). Gói có đúng 8 ảnh mới, bản 1.4.4; ký hiệu 552 — bằng 1.4.3 (đã kiểm thiếu 0 trên iOS 5 / 6)
+  nên không chạy `cbsymcheck`. Tải lại: GitHub = Cydia (cùng SHA-256), chữ ký OTA đúng, `gpgv` kiểm `Release.gpg` + `InRelease`
+  đúng; API latest = v1.4.4 kèm `.sig`. Chưa cài / thử OTA trên máy (anh bảo không cần) — máy đang chạy 1.4.3 sẽ tự báo
+  «Có bản mới 1.4.4».
+
+### Bản 1.4.5 — sửa thông báo làm SpringBoard sập (21/11/2026)
+
+Anh báo iPhone 5 vào safe mode, nhờ điều tra rồi sửa và phát hành — D36.
+
+- Nguyên nhân: xem trước tin dài > 180 đơn vị UTF-16 bị cắt giữa một emoji → chữ thông báo có nửa cặp surrogate → SpringBoard
+  iOS 6 gọi `UTF8String` (NULL) không kiểm → sập → safe mode. Hai lần sập (19/11 20:24:57, 21/11 07:50:05) trùng tới mili-giây
+  với hai lần GramMini đẩy thông báo; lần 19/11 máy không nạp Glass 6.
+- Sửa: `+[GMTheme cut:max:]` (cắt theo ký tự ghép) + `+[GMTheme validUTF16:]` cho chữ thông báo; các chỗ cắt chữ khác dùng chung.

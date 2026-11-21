@@ -202,10 +202,11 @@ static void GMVoipReadable(CFReadStreamRef stream, CFStreamEventType type, void 
                       : (group && from.length && ![from isEqual:chat]) ? [NSString stringWithFormat:@"%@ @ %@", from, chat]
                                                                        : chat;
     NSString *body = GMPref(GMPrefPreview) ? [GMTheme preview:m] : @"Tin nhắn mới";
-    if (body.length > 180) body = [[body substringToIndex:180] stringByAppendingString:@"…"];
+    body = [GMTheme cut:body max:180];
 
     UILocalNotification *ln = [[UILocalNotification alloc] init];
-    ln.alertBody = [NSString stringWithFormat:@"%@: %@", title, body];
+    // Chữ thông báo phải đổi được sang UTF-8: SpringBoard iOS 6 gọi UTF8String không kiểm NULL → sập, máy vào safe mode (D36)
+    ln.alertBody = [GMTheme validUTF16:[NSString stringWithFormat:@"%@: %@", title, body]];
     ln.alertAction = @"Xem";
     ln.userInfo = @{@"peer": peer ?: @""};
     if (GMPref(GMPrefSound)) ln.soundName = UILocalNotificationDefaultSoundName;
