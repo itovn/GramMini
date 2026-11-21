@@ -7,10 +7,10 @@ Architectures: iphoneos-arm
 Components: main
 Description: GramMini — Telegram cho iPhone / iPad iOS 5 / iOS 6 đã jailbreak — https://itovn.github.io/GramMini/
 MD5Sum:
- 3fd4c442883f778e267140da826b6414 2148 Packages
- 842c4902920d15309407ee9a506cad28 711 Packages.gz
- 922cfd814faea77229367bc2c3c08e04 871 Packages.bz2
+ e8884f79035edc60ed50c65e9f9b2ff1 2148 Packages
+ c66015d44498036a7835ced562a2b052 711 Packages.gz
+ 2698e50f168daa19719a23af651106a0 858 Packages.bz2
 SHA256:
- e9ce6ebdbd329c8b98176d9df2d15f3b7c699f91258ab3fd43a04666514c5bc7 2148 Packages
- bc4dc4eedf2e928d84d1831aa0006e45cb784e40d5ce4b84140860cecc285341 711 Packages.gz
- a80a4032abb6556663bc9aa6b81afd2b262d4f4cc022408e0a43f41eed2926fe 871 Packages.bz2
+ f212e7d5fa9b19f04b26bba8d797453607c011cc171c93a6a4ef75603ffc7f24 2148 Packages
+ 3576635fa7bcfd678d205dbe88c183e26a9874cce7a8dc9d65246eedfc4cea93 711 Packages.gz
+ cb3d15f6db7078ffa0dd49661ee1cc48091a81824302e0fb09f42a26853ba771 858 Packages.bz2
