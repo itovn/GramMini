@@ -1,23 +1,4 @@
 Package: vn.grammini.app
-Version: 1.9.0
-Architecture: iphoneos-arm
-Maintainer: GramMini
-Installed-Size: 10972
-Depends: firmware (>= 5.0), mobilesubstrate
-Filename: debs/vn.grammini.app_1.9.0_iphoneos-arm.deb
-Size: 5601962
-MD5sum: b14d50bfb4a47323b43c004e8814177d
-SHA1: 66f47379c3868e3478e6b4c5eba3f9cd2367370a
-SHA256: 025d6c0f6c95cd107a31c0aef8e8b8261e964a83dcf6d28b12030e97c9877c84
-Section: Social
-Description: Nhan tin Telegram tren iPhone / iPad iOS 5 / iOS 6 (ung dung khong chinh thuc, dung Telegram API). Co MTProxy, goi thoai.
-Author: GramMini
-Icon: file:///Applications/GramMini.app/Icon@2x.png
-Name: GramMini
-Depiction: https://itovn.github.io/GramMini/cydia/depiction.html
-Homepage: https://itovn.github.io/GramMini/
-
-Package: vn.grammini.app
 Version: 2.0.0
 Architecture: iphoneos-arm
 Maintainer: GramMini
@@ -47,6 +28,25 @@ Size: 6079974
 MD5sum: 5849e9c860144ddd8e0e7b1e60365281
 SHA1: d023869e7baf9bda248011f98422937e5887b69a
 SHA256: aec7c806e85f86547939a2833fe9a72fb1aee555b74153635f1851da326bb768
+Section: Social
+Description: Nhan tin Telegram tren iPhone / iPad iOS 5 / iOS 6 (ung dung khong chinh thuc, dung Telegram API). Co MTProxy, goi thoai.
+Author: GramMini
+Icon: file:///Applications/GramMini.app/Icon@2x.png
+Name: GramMini
+Depiction: https://itovn.github.io/GramMini/cydia/depiction.html
+Homepage: https://itovn.github.io/GramMini/
+
+Package: vn.grammini.app
+Version: 2.0.2
+Architecture: iphoneos-arm
+Maintainer: GramMini
+Installed-Size: 12000
+Depends: firmware (>= 5.0), mobilesubstrate
+Filename: debs/vn.grammini.app_2.0.2_iphoneos-arm.deb
+Size: 6133842
+MD5sum: 67dc2bf3d16cc53681373fabcad76eec
+SHA1: 62285f8ed85ff3406c926a023fd77f960abb4963
+SHA256: 36718495e66ea0354f8cef3da864a7a0f36e68d380c0dccec7495f5e039d5503
 Section: Social
 Description: Nhan tin Telegram tren iPhone / iPad iOS 5 / iOS 6 (ung dung khong chinh thuc, dung Telegram API). Co MTProxy, goi thoai.
 Author: GramMini
