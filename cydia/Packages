@@ -1,14 +1,14 @@
 Package: vn.grammini.app
-Version: 2.0.7
+Version: 2.0.10
 Architecture: iphoneos-arm
 Maintainer: GramMini
-Installed-Size: 12220
+Installed-Size: 12252
 Depends: firmware (>= 5.0), mobilesubstrate
-Filename: debs/vn.grammini.app_2.0.7_iphoneos-arm.deb
-Size: 6221046
-MD5sum: b1eeb5efe25d9cf08a0426870188fc95
-SHA1: 252758b7e8d766fc55a0b1994a8020f8a0e4d48f
-SHA256: 7efb0e1de6af85fad6f6e1c10c0f1955cf40ce2b37e94873ae9b22ce96ced70d
+Filename: debs/vn.grammini.app_2.0.10_iphoneos-arm.deb
+Size: 6243740
+MD5sum: 70260d28df2811c304b540e497b035d3
+SHA1: 54615541bb60c392ef33cdc54d857ef36f271d18
+SHA256: e4bd234b3af39840dec076bb90fa6df6b06a2e7dad086639605c0e67c38a2586
 Section: Social
 Description: Nhan tin Telegram tren iPhone / iPad iOS 5 / iOS 6 (ung dung khong chinh thuc, dung Telegram API). Co MTProxy, goi thoai.
 Author: GramMini
