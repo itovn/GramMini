@@ -10,25 +10,25 @@ Architectures: iphoneos-arm
 Components: main
 Description: GramMini — Telegram cho iPhone / iPad iOS 5 / iOS 6 đã jailbreak — https://itovn.github.io/GramMini/
 MD5Sum:
- 5cd146d6970144449891ed8145543b76 2184 Packages
- 33afb9f4b02564a7f831824dd2376b37 715 Packages.gz
- 8ba4d00db1e878c75ad1a55c43aab33e 894 Packages.bz2
+ a0b86951fb3fa196f28362daed0a8404 2184 Packages
+ f2b2b591ef403915b9df26716f02c42f 719 Packages.gz
+ 69fc7841950632edb0cf8a561979fcd2 882 Packages.bz2
 SHA256:
- 293c5ff63a5a72c3d4f7d0f8a7c4f34915464338b24c289edd0c31608a5297e0 2184 Packages
- 077b2dfd45f231a6c1404efdcd87339d593be906c51b671046b2af6d542540bc 715 Packages.gz
- 0b7644fac639bf78970159a2a3c16456c914e7f0ac3b2372df7132247b08c960 894 Packages.bz2
+ da2f8be344b5749d4bd36afa665d5fce1702b862b848caaec6719d549cd13c81 2184 Packages
+ 2b5e77a62f7cab848e89075e6e472b1b77bf6633dd4eb2d5fb9c8dd8a022ac44 719 Packages.gz
+ eccc77c65d127750b6a8706ddde8957cc819bdcb0adb41ef5349dc8bf67c3909 882 Packages.bz2
 
 -----BEGIN PGP SIGNATURE-----
 
-iQGzBAEBCAAdFiEEhBotOfjXV/IwQlZk+sIoMrKrxWQFAmsIB4wACgkQ+sIoMrKr
-xWRzxQv/dzR8NbYAQgG7UKm/W0PpfDLu+NctMPFqAruKQJsM4OIb3rys9ZV3AJfz
-3EA9bNb7Ww+5tfK9yG/+jmhkr21TsJFNDR6O5yPO0Doo7RdhA/ZzsR+CsmrOYuEg
-YQBrieVBVmriLQjmuWdubDyjieSAwiU0LNOvSOZStKFfnn8MwaZ3dCxYvO8HEzg4
-mpR78f/UqY85fQOR9MdF7oFgG93qeW3cp0W9W8TZjqbn3u5WC/V1hcGvDLi/LI2b
-CfXAWGxvaI3Zf9rcdu3SUlpzBdzeQIB7a6op1q6WtMeoLzux/maeozgNc4j1kogH
-ZjQkKvAHjEiAkoMBzNgXyRXTyGgaR0zY5QeuncoIcb8aRRyQ76ZzoFjaeD8gXt4A
-e5EZTvwp+MWmYVf1VMdLNhU5GClHvKzJVNtHOWOby43GPS3jy4naqWQ6WxPktuPj
-SruQlKqFldkDqNHLbzY5uWyW1uR1hV1Vd+lRLrX8eYRpGhc7rTwjS8RKd1SDuF0e
-MbTqpKSA
-=f1rp
+iQGzBAEBCAAdFiEEhBotOfjXV/IwQlZk+sIoMrKrxWQFAmsIGEUACgkQ+sIoMrKr
+xWRMJQv/WbDG5rZ1On9/zk6PLLJkFMaR6TVy/lLNVzCU8yK93X4Z/gzeMov9H7mq
+GPqAMlNlz8hQE0p96OPkZeI0HyifWolk1q6mwde/714rq4W8q8MdQop7rHXk1it9
+KdHurp7ji+Q42k28rhmm+/TWCcdzweCg83jRiHD+OJbl3tKLXk6ivN83CRXj8eQb
+AoWILdzrH5HTclZEeKkJpA3Wg+8+K+OC9v6b+qqz9sZo50pN3KR1lV4ANV1D+iiz
+Njf8CUGh44ezw58ylQkjWZVhkwadsnb/HEILmHNKdi9+34Wtz/b0ssbRZ/od78Fc
+V0GTThdvKxv1A4mGLV5KJbgpoKpQhdy+ubnWugRyVJVXuPD8I4Gj+Z2dBCy1i3ZC
++8fU9Y0hfKpZCDVQFXj/nKAFvz0vA408gEgmRsOJbzuCfMgegm5iFjgkp9xyuyKL
+OZQU8L3/o+KszQsw1sv2VKZc0n5BrAb/huERCy9lwC60BJGjA7EET07PZ84Rd4dH
+lFmYQy1c
+=yxAb
 -----END PGP SIGNATURE-----
